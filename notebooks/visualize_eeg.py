@@ -145,3 +145,4 @@ if __name__ == "__main__":
     main()
 
 
+# python notebooks/visualize_eeg.py data/processed/eyes_open/sub-1/sub-1_eeg.edf --start 5 --duration 15
