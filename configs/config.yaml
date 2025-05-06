@@ -1,0 +1,60 @@
+# BrainAuth配置文件
+
+# 随机种子设置
+seed: 42
+
+# 数据配置
+data:
+  data_dir: "./data"
+  condition: "eyes_open"  # 'eyes_open' 或 'eyes_closed'
+  batch_size: 64
+  num_workers: 4
+  cache_data: false
+  pos_ratio: 0.5  # 正样本(同一受试者)的比例
+  preprocess_params:
+    l_freq: 0.5        # 高通滤波频率
+    h_freq: 45       # 低通滤波频率
+    segment_duration: 2.0  # 每个样本的持续时间（秒）
+    overlap: 0.5       # 样本间的重叠比例
+    normalize: true    # 是否进行标准化
+    channels: null     # 要使用的通道列表(null表示使用全部)
+    resample: 128      # 降采样频率(Hz)
+
+# 模型配置
+model:
+  name: "P3DCNN"  # 选择模型: "P3DCNN" 或 "SiameseBrainAuth"
+  input_shape: [110, 100, 10]  # 空-频特征图的形状 (高度, 宽度, 频带数)
+  num_classes: 2
+  pretrained: null  # 预训练模型路径，null表示不使用预训练
+
+# 训练配置
+train:
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  lr_scheduler: "cosine"  # "step", "cosine", "plateau"
+  lr_scheduler_params:
+    step_size: 20         # 用于StepLR
+    gamma: 0.1            # 用于StepLR和ReduceLROnPlateau
+    patience: 10          # 用于ReduceLROnPlateau
+  early_stopping: true
+  early_stopping_patience: 15
+  loss_function: "cross_entropy"  # 或 "bce", "focal", "contrastive"
+
+# 验证配置
+evaluation:
+  metrics: ["accuracy", "precision", "recall", "f1", "auc", "eer"]
+  best_metric: "accuracy"  # 用于模型选择的指标
+  subject_split: 
+    train: 0.7
+    val: 0.15
+    test: 0.15
+  monitor_subject_performance: true  # 是否监控每个受试者的性能
+
+# 结果保存
+output:
+  checkpoint_dir: "./outputs/checkpoints"
+  log_dir: "./outputs/logs"
+  results_dir: "./outputs/results"
+  save_best_only: true
+  save_frequency: 5  # 每几个epoch保存一次

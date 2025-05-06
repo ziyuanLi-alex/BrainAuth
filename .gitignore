@@ -1,3 +1,6 @@
 data/*
 .venv/**
 .venv/bin/python3.10
+
+*.pyc
+*.log

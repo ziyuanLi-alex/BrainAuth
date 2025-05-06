@@ -307,7 +307,6 @@ class BrainAuthDataset(Dataset):
 
 def get_dataloaders(
     config_path: str,
-    task: str = 'verification',
     train_subjects: Optional[List[int]] = None,
     val_subjects: Optional[List[int]] = None,
     test_subjects: Optional[List[int]] = None
@@ -317,7 +316,6 @@ def get_dataloaders(
     
     参数:
         config_path: 配置文件路径
-        task: 任务类型，'verification'（验证）或'identification'（识别）
         train_subjects: 训练集受试者
         val_subjects: 验证集受试者
         test_subjects: 测试集受试者
@@ -356,15 +354,9 @@ def get_dataloaders(
         val_subjects = all_subjects[train_size:train_size + val_size]
         test_subjects = all_subjects[train_size + val_size:]
 
-    # 选择数据集类
-    if task.lower() == 'verification':
-        dataset_class = BrainAuthDataset
-        # 验证数据集的额外参数
-        extra_params = {'pos_ratio': data_config.get('pos_ratio', 0.5)}
-    else:
-        # dataset_class = BrainAuthIdentificationDataset
-        # extra_params = {}
-        pass
+    # 设置数据集参数
+    dataset_class = BrainAuthDataset
+    extra_params = {'pos_ratio': data_config.get('pos_ratio', 0.5)}
     
 
     # 创建数据集
@@ -437,12 +429,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='验证BrainAuth数据集功能')
     parser.add_argument('--data_dir', type=str, default='./data', help='数据根目录')
     parser.add_argument('--condition', type=str, default='eyes_open', help='实验条件: eyes_open或eyes_closed')
-    parser.add_argument('--task', type=str, default='verification', help='任务类型: verification或identification')
+
     parser.add_argument('--batch_size', type=int, default=4, help='批处理大小')
     parser.add_argument('--n_samples', type=int, default=5, help='要显示的样本数量')
     args = parser.parse_args()
     
-    print(f"开始验证BrainAuth数据集功能 - 任务: {args.task}, 条件: {args.condition}")
+    print(f"开始验证BrainAuth数据集功能 - 条件: {args.condition}")
 
     #  创建一个临时配置文件
     import tempfile
@@ -477,7 +469,7 @@ if __name__ == "__main__":
         # 获取数据加载器
         start_time = time.time()
         print("正在加载数据...")
-        dataloaders = get_dataloaders(config_path, task=args.task)
+        dataloaders = get_dataloaders(config_path)
         train_loader = dataloaders['train']
         val_loader = dataloaders['val']
         test_loader = dataloaders['test']
@@ -491,36 +483,21 @@ if __name__ == "__main__":
         # 查看几个样本
         print(f"\n查看{args.n_samples}个训练样本:")
         for i, batch in enumerate(train_loader):
-            if args.task == 'verification':
-                eeg1, eeg2, labels = batch
-                print(f"批次 {i+1}:")
-                print(f"  批次大小: {eeg1.shape[0]}")
-                print(f"  EEG1形状: {eeg1.shape}")
-                print(f"  EEG2形状: {eeg2.shape}")
-                print(f"  标签形状: {labels.shape}")
-                
-                # 显示批次中的每个样本
-                for j in range(min(eeg1.shape[0], 2)):  # 仅显示批次中的前两个样本
-                    print(f"    样本 {j+1}:")
-                    print(f"      标签: {labels[j].item()}")
-                    print(f"      标签含义: {'同一受试者' if labels[j].item() == 1 else '不同受试者'}")
-            else:  # identification
-                eeg, labels = batch
-                print(f"批次 {i+1}:")
-                print(f"  批次大小: {eeg.shape[0]}")
-                print(f"  EEG形状: {eeg.shape}")
-                print(f"  标签形状: {labels.shape}")
-                
-                # 显示批次中的每个样本
-                for j in range(min(eeg.shape[0], 2)):  # 仅显示批次中的前两个样本
-                    print(f"    样本 {j+1}:")
-                    print(f"      标签(受试者索引): {labels[j].item()}")
+            eeg1, eeg2, labels = batch
+            print(f"批次 {i+1}:")
+            print(f"  批次大小: {eeg1.shape[0]}")
+            print(f"  EEG1形状: {eeg1.shape}")
+            print(f"  EEG2形状: {eeg2.shape}")
+            print(f"  标签形状: {labels.shape}")
+            
+            # 显示批次中的每个样本
+            for j in range(min(eeg1.shape[0], 2)):  # 仅显示批次中的前两个样本
+                print(f"    样本 {j+1}:")
+                print(f"      标签: {labels[j].item()}")
+                print(f"      标签含义: {'同一受试者' if labels[j].item() == 1 else '不同受试者'}")
             
             # 查看通道数和时间点数
-            if args.task == 'verification':
-                channels, time_points = eeg1.shape[1], eeg1.shape[2]
-            else:
-                channels, time_points = eeg.shape[1], eeg.shape[2]
+            channels, time_points = eeg1.shape[1], eeg1.shape[2]
                 
             print(f"  通道数: {channels}")
             print(f"  时间点数: {time_points}")
