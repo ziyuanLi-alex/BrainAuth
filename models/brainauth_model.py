@@ -6,31 +6,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import logging
-import argparse # 新增导入
+import yaml
+import os
 
 # 配置日志
-# 创建参数解析器
-parser = argparse.ArgumentParser(description='BrainAuth Model Training and Evaluation')
-parser.add_argument(
-    '--log-level',
-    type=str,
-    default='INFO',
-    choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
-    help='Set the logging level (default: INFO)'
-)
-parser.add_argument(
-    '--log-shape-info',
-    action='store_true',
-    help='Enable detailed logging of tensor shapes'
-)
-args, unknown = parser.parse_known_args() # 使用 parse_known_args() 以允许其他未定义参数
-
 logging.basicConfig(
-    level=getattr(logging, args.log_level.upper(), logging.INFO),
-    # level=logging.INFO,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('BrainAuth')
+
+# 加载配置文件
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'configs', 'config.yaml')
+_log_tensor_shapes = True  # 默认开启
+try:
+    with open(CONFIG_PATH, 'r') as f:
+        config = yaml.safe_load(f)
+    _log_tensor_shapes = config.get('logging', {}).get('log_tensor_shapes', True)
+except FileNotFoundError:
+    logger.warning(f"Configuration file {CONFIG_PATH} not found. Using default logging settings.")
+except yaml.YAMLError as e:
+    logger.warning(f"Error parsing configuration file {CONFIG_PATH}: {e}. Using default logging settings.")
 
 
 class P3DCNN(nn.Module):
@@ -127,27 +123,27 @@ class P3DCNN(nn.Module):
     
     def _forward_conv(self, x):
         """前向传播卷积部分"""
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"_forward_conv input shape: {x.shape}")
         x = F.relu(self.conv1(x))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After conv1 shape: {x.shape}")
         x = F.relu(self.conv2(x))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After conv2 shape: {x.shape}")
         
         # 三维卷积-池化模块
         x = F.relu(self.bn1(self.conv3(x)))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After conv3 shape: {x.shape}")
         x = F.relu(self.conv4(x))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After conv4 shape: {x.shape}")
         x = F.relu(self.conv5(x))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After conv5 shape: {x.shape}")
         x = F.relu(self.bn2(self.conv6(x)))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After conv6 shape: {x.shape}")
         x = self.dropout(x)
         return x
@@ -155,55 +151,55 @@ class P3DCNN(nn.Module):
     def forward(self, x1, x2):
         """前向传播"""
         # 打印输入形状
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"P3DCNN forward - x1 shape: {x1.shape}")
             logger.info(f"P3DCNN forward - x2 shape: {x2.shape}")
         
         # 确保输入形状正确 (batch_size, channels, depth, height, width)
         if x1.dim() == 4:
-            if args.log_shape_info:
+            if _log_tensor_shapes:
                 logger.info("Adding channel dimension to x1")
             x1 = x1.unsqueeze(1)
-            if args.log_shape_info:
+            if _log_tensor_shapes:
                 logger.info(f"After unsqueeze, x1 shape: {x1.shape}")
         if x2.dim() == 4:
-            if args.log_shape_info:
+            if _log_tensor_shapes:
                 logger.info("Adding channel dimension to x2")
             x2 = x2.unsqueeze(1)
-            if args.log_shape_info:
+            if _log_tensor_shapes:
                 logger.info(f"After unsqueeze, x2 shape: {x2.shape}")
         
         # 分别通过卷积层提取特征
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info("Starting forward conv for x1")
         x1_conv = self._forward_conv(x1)
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"x1_conv shape: {x1_conv.shape}")
         
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info("Starting forward conv for x2")
         x2_conv = self._forward_conv(x2)
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"x2_conv shape: {x2_conv.shape}")
         
         # 特征拼接或计算差异
         # 方法1: 欧氏距离
         x_diff = torch.abs(x1_conv - x2_conv)
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"x_diff shape: {x_diff.shape}")
         
         x_flat = x_diff.view(x_diff.size(0), -1)
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"x_flat shape: {x_flat.shape}")
         
         # 全连接层
         x = F.relu(self.fc(x_flat))
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"After fc shape: {x.shape}")
         
         # 输出层
         output = self.out(x)
-        if args.log_shape_info:
+        if _log_tensor_shapes:
             logger.info(f"Output shape: {output.shape}")
         
         return output

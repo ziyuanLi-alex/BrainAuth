@@ -51,6 +51,10 @@ evaluation:
     test: 0.15
   monitor_subject_performance: true  # 是否监控每个受试者的性能
 
+# 日志配置
+logging:
+  log_tensor_shapes: false  # 是否记录张量形状信息
+
 # 结果保存
 output:
   checkpoint_dir: "./outputs/checkpoints"
