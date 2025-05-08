@@ -22,7 +22,7 @@ data:
 
 # 模型配置
 model:
-  name: "P3DCNN"  # 选择模型: "P3DCNN" 或 "SiameseBrainAuth"
+  name: "LightP3DCNN"  # 选择模型: "P3DCNN", "SiameseBrainAuth", "LightP3DCNN"
   input_shape: [110, 100, 10]  # 空-频特征图的形状 (高度, 宽度, 频带数)
   num_classes: 2
   pretrained: null  # 预训练模型路径，null表示不使用预训练

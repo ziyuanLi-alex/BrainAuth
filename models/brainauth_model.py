@@ -330,6 +330,108 @@ def test_p3dcnn():
     print(f"总参数数量: {total_params}")
     print(f"有梯度的参数数量: {params_with_grad}")
 
+class LightP3DCNN(nn.Module):
+    """轻量级P3DCNN模型，减少90%以上参数"""
+    
+    def __init__(self, input_shape=(110, 100, 10), num_classes=2):
+        super(LightP3DCNN, self).__init__()
+        self.input_shape = input_shape
+        
+        # 减少通道数和卷积核尺寸
+        # 空间方向卷积: 从16通道降至8通道，核尺寸从5x5降至3x3
+        self.conv1 = nn.Conv3d(
+            in_channels=1,
+            out_channels=8,  # 原16，减少一半
+            kernel_size=(3, 3, 1),  # 原(5, 5, 1)
+            stride=1,
+            padding='same'
+        )
+        
+        # 频域方向卷积: 从32通道降至16通道，核尺寸从5降至3
+        self.conv2 = nn.Conv3d(
+            in_channels=8,  # 原16
+            out_channels=16,  # 原32
+            kernel_size=(1, 1, 3),  # 原(1, 1, 5)
+            stride=1,
+            padding='same'
+        )
+        
+        # 简化三维卷积-池化模块
+        # 从64通道降至32通道
+        self.conv3 = nn.Conv3d(
+            in_channels=16,  # 原32
+            out_channels=32,  # 原64
+            kernel_size=(3, 3, 2),  # 减小卷积核尺寸
+            stride=2,
+            padding=1
+        )
+        self.bn1 = nn.BatchNorm3d(32)  # 原64
+        
+        # 直接跳过中间卷积层(conv4, conv5)
+        # 最后一个卷积层: 从256通道降至64通道
+        self.conv6 = nn.Conv3d(
+            in_channels=32,  # 原128
+            out_channels=64,  # 原256
+            kernel_size=(3, 3, 2),  # 减小卷积核尺寸
+            stride=2,
+            padding=1
+        )
+        self.bn2 = nn.BatchNorm3d(64)  # 原256
+        self.dropout = nn.Dropout(0.3)  # 降低dropout比例以加快训练
+        
+        # 计算卷积后的特征尺寸
+        conv_output_size = self._get_conv_output_size(input_shape)
+        
+        # 全连接层减少神经元数量
+        self.fc = nn.Linear(conv_output_size, 64)  # 原256，减少到64
+        
+        # 输出层
+        self.out = nn.Linear(64, num_classes)  # 原256->2，现在64->2
+    
+    def _get_conv_output_size(self, shape):
+        """计算卷积层输出的特征尺寸"""
+        batch_size = 1
+        input_tensor = torch.zeros(batch_size, 1, *shape)
+        output = self._forward_conv(input_tensor)
+        return output.numel() // batch_size
+    
+    def _forward_conv(self, x):
+        """前向传播卷积部分"""
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        
+        # 三维卷积-池化模块
+        x = F.relu(self.bn1(self.conv3(x)))
+        # 去掉原来的conv4和conv5
+        x = F.relu(self.bn2(self.conv6(x)))
+        x = self.dropout(x)
+        return x
+    
+    def forward(self, x1, x2):
+        """前向传播"""
+        # 确保输入形状正确 (batch_size, channels, depth, height, width)
+        if x1.dim() == 4:
+            x1 = x1.unsqueeze(1)
+        if x2.dim() == 4:
+            x2 = x2.unsqueeze(1)
+        
+        # 分别通过卷积层提取特征
+        x1_conv = self._forward_conv(x1)
+        x2_conv = self._forward_conv(x2)
+        
+        # 特征差异计算
+        x_diff = torch.abs(x1_conv - x2_conv)
+        x_flat = x_diff.view(x_diff.size(0), -1)
+        
+        # 全连接层
+        x = F.relu(self.fc(x_flat))
+        
+        # 输出层
+        output = self.out(x)
+        
+        return output
+
+
 
 def test_siamese_brainauth():
     """测试SiameseBrainAuth模型"""

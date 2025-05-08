@@ -324,8 +324,8 @@ class BrainAuthDataset(Dataset):
                 self.cached_data[spec_key2] = spec_data2
         
         # 记录日志（仅限于每1000个样本的第一个）
-        if index % 1000 == 0:
-            logger.info(f"样本 {index} - 原始EEG形状: {eeg_data1.shape}, 特征图形状: {spec_data1.shape}")
+        # if index % 1000 == 0:
+        #     logger.info(f"样本 {index} - 原始EEG形状: {eeg_data1.shape}, 特征图形状: {spec_data1.shape}")
         
         return spec_data1, spec_data2, torch.tensor(label, dtype=torch.long)
 
