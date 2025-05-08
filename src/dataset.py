@@ -6,6 +6,18 @@ from torch.utils.data import Dataset, DataLoader
 from typing import Dict, List, Tuple, Optional, Union
 import yaml
 import random
+import logging
+from EEGSpectralConverter import EEGSpectralConverter
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('BrainAuth')
+
+# 设置日志级别为警告或错误，以减少输出
+mne.set_log_level("WARNING")  # 或者使用 "ERROR" 以获得更少的输出
 
 
 class BrainAuthDataset(Dataset):
@@ -215,15 +227,53 @@ class BrainAuthDataset(Dataset):
         """返回数据集中的样本对数量"""
         return len(self.pairs)
 
-    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, int]:
-        """获取单个样本对
+    # def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, int]:
+
+
+        # """获取单个样本对
         
-        参数:
-            index: 样本索引
+        # 参数:
+        #     index: 样本索引
             
-        返回:
-            (eeg_data1, eeg_data2, label): 一对EEG数据张量和对应的标签
-        """
+        # 返回:
+        #     (eeg_data1, eeg_data2, label): 一对EEG数据张量和对应的标签
+        # """
+        # pair = self.pairs[index]
+        # segment1 = pair['segment1']
+        # segment2 = pair['segment2']
+        # label = pair['label']
+
+        # # 加载第一个段
+        # cache_key1 = f"{segment1['eeg_file']}_{segment1['start_time']}_{segment1['end_time']}"
+        # if self.cache and cache_key1 in self.cached_data:
+        #     eeg_data1 = self.cached_data[cache_key1]
+        # else:
+        #     eeg_data1 = self._load_and_preprocess(
+        #         segment1['eeg_file'],
+        #         segment1['start_time'],
+        #         segment1['end_time']
+        #     )
+        #     if self.cache:
+        #         self.cached_data[cache_key1] = eeg_data1
+        
+        # # 加载第二个段
+        # cache_key2 = f"{segment2['eeg_file']}_{segment2['start_time']}_{segment2['end_time']}"
+        # if self.cache and cache_key2 in self.cached_data:
+        #     eeg_data2 = self.cached_data[cache_key2]
+        # else:
+        #     eeg_data2 = self._load_and_preprocess(
+        #         segment2['eeg_file'],
+        #         segment2['start_time'],
+        #         segment2['end_time']
+        #     )
+        #     if self.cache:
+        #         self.cached_data[cache_key2] = eeg_data2
+        
+        # return eeg_data1, eeg_data2, torch.tensor(label, dtype=torch.long)
+
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, int]:
+        """获取单个样本对"""
         pair = self.pairs[index]
         segment1 = pair['segment1']
         segment2 = pair['segment2']
@@ -255,8 +305,59 @@ class BrainAuthDataset(Dataset):
             if self.cache:
                 self.cached_data[cache_key2] = eeg_data2
         
-        return eeg_data1, eeg_data2, torch.tensor(label, dtype=torch.long)
+        # 转换为空间-频率特征图
+        spec_key1 = f"spec_{cache_key1}"
+        spec_key2 = f"spec_{cache_key2}"
+        
+        if self.cache and spec_key1 in self.cached_data:
+            spec_data1 = self.cached_data[spec_key1]
+        else:
+            spec_data1 = self._convert_to_spectral_features(eeg_data1)
+            if self.cache:
+                self.cached_data[spec_key1] = spec_data1
+        
+        if self.cache and spec_key2 in self.cached_data:
+            spec_data2 = self.cached_data[spec_key2]
+        else:
+            spec_data2 = self._convert_to_spectral_features(eeg_data2)
+            if self.cache:
+                self.cached_data[spec_key2] = spec_data2
+        
+        # 记录日志（仅限于每1000个样本的第一个）
+        if index % 1000 == 0:
+            logger.info(f"样本 {index} - 原始EEG形状: {eeg_data1.shape}, 特征图形状: {spec_data1.shape}")
+        
+        return spec_data1, spec_data2, torch.tensor(label, dtype=torch.long)
 
+    def _convert_to_spectral_features(self, eeg_data: torch.Tensor) -> torch.Tensor:
+        """将EEG数据转换为空间-频率特征图"""
+        # 初始化转换器（如果尚未初始化）
+        if not hasattr(self, 'spectral_converter'):
+            # 从配置参数中获取频段信息
+            freq_bands = None
+            if 'freq_bands' in self.preprocess_params:
+                freq_bands = self.preprocess_params['freq_bands']
+            
+            # 确定采样率
+            fs = self.preprocess_params.get('resample', 160.0)
+            
+            # 创建转换器
+            self.spectral_converter = EEGSpectralConverter(
+                fs=fs,
+                freq_bands=freq_bands,
+                output_shape=(110, 100, 10),  # 输出形状
+                mapping_method=self.preprocess_params.get('mapping_method', 'cubic'),
+                use_log=self.preprocess_params.get('use_log', True)
+            )
+    
+        try:
+            # 转换EEG数据
+            spectral_features = self.spectral_converter.convert(eeg_data)
+            return spectral_features
+        except Exception as e:
+            logger.error(f"转换EEG数据到空间-频率特征图时出错: {e}")
+            # 返回零张量作为后备
+            return torch.zeros((110, 100, 10), dtype=torch.float32)
 
     def _load_and_preprocess(self, eeg_file: str, start_time: float, end_time: float) -> torch.Tensor:
         """加载并预处理EEG数据段
@@ -299,7 +400,7 @@ class BrainAuthDataset(Dataset):
         if self.preprocess_params['normalize']:
             data = (data - np.mean(data, axis=1, keepdims=True)) / (np.std(data, axis=1, keepdims=True) + 1e-10)
         
-        # 转换为PyTorch张量
+        # 转换为PyTorch张量，类似[64, 256] [通道， sample]
         data_tensor = torch.tensor(data, dtype=torch.float32)
         
         return data_tensor

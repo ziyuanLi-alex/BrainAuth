@@ -5,6 +5,32 @@ BrainAuth Model: 基于空-频特征图学习的脑电图验证模型
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import logging
+import argparse # 新增导入
+
+# 配置日志
+# 创建参数解析器
+parser = argparse.ArgumentParser(description='BrainAuth Model Training and Evaluation')
+parser.add_argument(
+    '--log-level',
+    type=str,
+    default='INFO',
+    choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+    help='Set the logging level (default: INFO)'
+)
+parser.add_argument(
+    '--log-shape-info',
+    action='store_true',
+    help='Enable detailed logging of tensor shapes'
+)
+args, unknown = parser.parse_known_args() # 使用 parse_known_args() 以允许其他未定义参数
+
+logging.basicConfig(
+    level=getattr(logging, args.log_level.upper(), logging.INFO),
+    # level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('BrainAuth')
 
 
 class P3DCNN(nn.Module):
@@ -101,51 +127,86 @@ class P3DCNN(nn.Module):
     
     def _forward_conv(self, x):
         """前向传播卷积部分"""
+        if args.log_shape_info:
+            logger.info(f"_forward_conv input shape: {x.shape}")
         x = F.relu(self.conv1(x))
+        if args.log_shape_info:
+            logger.info(f"After conv1 shape: {x.shape}")
         x = F.relu(self.conv2(x))
+        if args.log_shape_info:
+            logger.info(f"After conv2 shape: {x.shape}")
         
         # 三维卷积-池化模块
         x = F.relu(self.bn1(self.conv3(x)))
+        if args.log_shape_info:
+            logger.info(f"After conv3 shape: {x.shape}")
         x = F.relu(self.conv4(x))
+        if args.log_shape_info:
+            logger.info(f"After conv4 shape: {x.shape}")
         x = F.relu(self.conv5(x))
+        if args.log_shape_info:
+            logger.info(f"After conv5 shape: {x.shape}")
         x = F.relu(self.bn2(self.conv6(x)))
+        if args.log_shape_info:
+            logger.info(f"After conv6 shape: {x.shape}")
         x = self.dropout(x)
         return x
     
     def forward(self, x1, x2):
-        """
-        前向传播
+        """前向传播"""
+        # 打印输入形状
+        if args.log_shape_info:
+            logger.info(f"P3DCNN forward - x1 shape: {x1.shape}")
+            logger.info(f"P3DCNN forward - x2 shape: {x2.shape}")
         
-        参数:
-            x1: 第一个EEG样本的空-频特征图
-            x2: 第二个EEG样本的空-频特征图
-            
-        返回:
-            output: 分类输出（同一人/不同人）
-        """
         # 确保输入形状正确 (batch_size, channels, depth, height, width)
         if x1.dim() == 4:
+            if args.log_shape_info:
+                logger.info("Adding channel dimension to x1")
             x1 = x1.unsqueeze(1)
+            if args.log_shape_info:
+                logger.info(f"After unsqueeze, x1 shape: {x1.shape}")
         if x2.dim() == 4:
+            if args.log_shape_info:
+                logger.info("Adding channel dimension to x2")
             x2 = x2.unsqueeze(1)
+            if args.log_shape_info:
+                logger.info(f"After unsqueeze, x2 shape: {x2.shape}")
         
         # 分别通过卷积层提取特征
+        if args.log_shape_info:
+            logger.info("Starting forward conv for x1")
         x1_conv = self._forward_conv(x1)
+        if args.log_shape_info:
+            logger.info(f"x1_conv shape: {x1_conv.shape}")
+        
+        if args.log_shape_info:
+            logger.info("Starting forward conv for x2")
         x2_conv = self._forward_conv(x2)
+        if args.log_shape_info:
+            logger.info(f"x2_conv shape: {x2_conv.shape}")
         
         # 特征拼接或计算差异
         # 方法1: 欧氏距离
         x_diff = torch.abs(x1_conv - x2_conv)
+        if args.log_shape_info:
+            logger.info(f"x_diff shape: {x_diff.shape}")
+        
         x_flat = x_diff.view(x_diff.size(0), -1)
+        if args.log_shape_info:
+            logger.info(f"x_flat shape: {x_flat.shape}")
         
         # 全连接层
         x = F.relu(self.fc(x_flat))
+        if args.log_shape_info:
+            logger.info(f"After fc shape: {x.shape}")
         
         # 输出层
         output = self.out(x)
+        if args.log_shape_info:
+            logger.info(f"Output shape: {output.shape}")
         
         return output
-
 
 class SiameseBrainAuth(nn.Module):
     """
@@ -231,3 +292,134 @@ class SiameseBrainAuth(nn.Module):
         output = torch.sigmoid(self.fc(combined))
         
         return output
+
+#TODO: 生成dummy数据测试向量维度
+
+def test_p3dcnn():
+    """测试P3DCNN模型"""
+    print("\n=== 测试 P3DCNN 模型 ===")
+    
+    # 获取当前设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 创建模型实例
+    input_shape = (110, 100, 10)  # 高度, 宽度, 频带数
+    model = P3DCNN(input_shape=input_shape, num_classes=2).to(device)
+    
+    # 创建一批测试数据并移至设备
+    batch_size = 4
+    x1 = torch.randn(batch_size, *input_shape).to(device)
+    x2 = torch.randn(batch_size, *input_shape).to(device)
+    
+    # 前向传播
+    print(f"输入 x1 形状: {x1.shape}")
+    print(f"输入 x2 形状: {x2.shape}")
+    
+    output = model(x1, x2)
+    print(f"输出形状: {output.shape}")
+    
+    # 测试后向传播
+    labels = torch.randint(0, 2, (batch_size,)).to(device)
+    criterion = nn.CrossEntropyLoss()
+    loss = criterion(output, labels)
+    print(f"损失值: {loss.item()}")
+    
+    # 梯度反向传播
+    loss.backward()
+    print("梯度反向传播成功")
+    
+    # 测试获取参数梯度
+    total_params = sum(p.numel() for p in model.parameters())
+    params_with_grad = sum(p.numel() for p in model.parameters() if p.grad is not None)
+    print(f"总参数数量: {total_params}")
+    print(f"有梯度的参数数量: {params_with_grad}")
+
+
+def test_siamese_brainauth():
+    """测试SiameseBrainAuth模型"""
+    print("\n=== 测试 SiameseBrainAuth 模型 ===")
+    
+    # 获取当前设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 创建模型实例
+    input_shape = (110, 100, 10)
+    model = SiameseBrainAuth(input_shape=input_shape).to(device)
+    
+    # 创建一批测试数据并移至设备
+    batch_size = 4
+    x1 = torch.randn(batch_size, *input_shape).to(device)
+    x2 = torch.randn(batch_size, *input_shape).to(device)
+    
+    # 前向传播
+    print(f"输入 x1 形状: {x1.shape}")
+    print(f"输入 x2 形状: {x2.shape}")
+    
+    output = model(x1, x2)
+    print(f"输出形状: {output.shape}")
+    
+    # 测试后向传播
+    labels = torch.randint(0, 2, (batch_size, 1)).float().to(device)
+    criterion = nn.BCELoss()
+    loss = criterion(output, labels)
+    print(f"损失值: {loss.item()}")
+    
+    # 梯度反向传播
+    loss.backward()
+    print("梯度反向传播成功")
+    
+    # 测试获取参数梯度
+    total_params = sum(p.numel() for p in model.parameters())
+    params_with_grad = sum(p.numel() for p in model.parameters() if p.grad is not None)
+    print(f"总参数数量: {total_params}")
+    print(f"有梯度的参数数量: {params_with_grad}")
+
+
+def inspect_model_architecture(model, name):
+    """检查并打印模型架构"""
+    print(f"\n=== {name} 架构 ===")
+    print(model)
+    
+    # 计算模型参数总量
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    print(f"总参数数量: {total_params:,}")
+    print(f"可训练参数数量: {trainable_params:,}")
+    
+    # 计算模型大小(MB)
+    model_size = total_params * 4 / (1024 * 1024)  # 假设每个参数是4字节
+    print(f"模型大小: {model_size:.2f} MB")
+
+
+if __name__ == "__main__":
+    # 测试两个模型
+    print("开始测试BrainAuth模型...")
+    
+    # 检测CUDA设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"\n使用设备: {device}")
+    if device.type == "cuda":
+        print(f"GPU设备: {torch.cuda.get_device_name(0)}")
+        print(f"可用GPU数量: {torch.cuda.device_count()}")
+        print(f"当前GPU内存使用: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+    
+    # 创建模型实例用于架构检查
+    input_shape = (110, 100, 10)
+    p3dcnn_model = P3DCNN(input_shape=input_shape, num_classes=2).to(device)
+    siamese_model = SiameseBrainAuth(input_shape=input_shape).to(device)
+    
+    # 检查模型架构
+    inspect_model_architecture(p3dcnn_model, "P3DCNN模型")
+    inspect_model_architecture(siamese_model, "SiameseBrainAuth模型")
+    
+    # 运行模型测试
+    test_p3dcnn()
+    test_siamese_brainauth()
+    
+    print("\n所有测试完成!")
+    
+    # 清理GPU内存
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+        print(f"GPU内存已清理，当前使用: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")

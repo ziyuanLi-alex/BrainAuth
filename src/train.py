@@ -63,8 +63,14 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
         # 清零梯度
         optimizer.zero_grad()
         
-        # 前向传播
-        outputs = model(eeg1, eeg2)
+        try:
+            # 前向传播
+            outputs = model(eeg1, eeg2)
+        except Exception as e:
+            logger.error(f"前向传播发生错误: {e}")
+            logger.error(f"eeg1 shape: {eeg1.shape}")
+            logger.error(f"eeg2 shape: {eeg2.shape}")
+            raise e
         
         # 计算损失
         if isinstance(criterion, nn.BCELoss) or isinstance(criterion, nn.BCEWithLogitsLoss):
