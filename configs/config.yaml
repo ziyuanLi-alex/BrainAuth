@@ -8,7 +8,7 @@ data:
   data_dir: './data'
   condition: 'eyes_open'
   batch_size: 32  # 减小batch_size以适应3D CNN的内存需求
-  num_workers: 4  # 增加数据加载线程数
+  num_workers: 1  # 增加数据加载线程数
   cache_data: true
   use_hdf5_cache: true
   hdf5_cache_dir: './data/hdf_cache'
@@ -25,7 +25,7 @@ data:
     preprocess_cache: true
     mapping_method: 'cubic'
     use_log: true
-    freq_bands: [[8, 13], [13, 30]]  # alpha和beta频段
+    freq_bands: [[8.0, 10.2], [10.2, 12.4], [12.4, 14.6], [14.6, 16.8], [16.8, 19.0], [19.0, 21.2], [21.2, 23.4], [23.4, 25.6], [25.6, 27.8], [27.8, 30.0]]  # 8-30Hz划分为10个频段
 
 # 模型配置
 model:
@@ -68,4 +68,4 @@ output:
   log_dir: "./outputs/logs"
   results_dir: "./outputs/results"
   save_best_only: true
-  save_frequency: 3  
+  save_frequency: 3

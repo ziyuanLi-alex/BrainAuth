@@ -50,11 +50,22 @@ class EEGSpectralConverter:
         self.mapping_method = mapping_method
         self.use_log = use_log
         
-        # 默认使用10-15Hz频段，以0.5Hz为步长
-        if freq_bands is None:
-            self.freq_bands = [(10.0 + i * 0.5, 10.0 + (i + 1) * 0.5) for i in range(10)]
-        else:
+        num_target_bands = self.output_shape[2]
+
+        if freq_bands is not None and len(freq_bands) != num_target_bands:
+            logger.warning(
+                f"提供的 freq_bands 包含 {len(freq_bands)} 个频段, 但 output_shape期望 {num_target_bands} 个频段。 "
+                f"将根据 output_shape 调整/默认设置为 {num_target_bands} 个频段。"
+            )
+            # 强制使用基于 output_shape 的默认频段
+            self.freq_bands = [(10.0 + i * 0.5, 10.0 + (i + 1) * 0.5) for i in range(num_target_bands)]
+            # logger.info(f"由于频段数量不匹配或未指定 freq_bands，已生成 {num_target_bands} 个默认频段。")
+        elif freq_bands is not None and len(freq_bands) == num_target_bands:
             self.freq_bands = freq_bands
+            # logger.info(f"使用提供的 freq_bands，包含 {len(self.freq_bands)} 个频段，与 output_shape 匹配。")
+        else:  # freq_bands is None
+            self.freq_bands = [(10.0 + i * 0.5, 10.0 + (i + 1) * 0.5) for i in range(num_target_bands)]
+            # logger.info(f"freq_bands 为 None。已根据 output_shape 生成 {num_target_bands} 个默认频段。")
         
         # 初始化电极位置
         if channel_positions is None:
