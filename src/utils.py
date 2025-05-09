@@ -65,7 +65,7 @@ def plot_eeg_channels(file_path: str,
         available_channels = raw.ch_names
         channels_to_plot = [ch for ch in channels if ch in available_channels]
         if not channels_to_plot:
-            raise ValueError("指定的通道均不可用")
+            raise ValueError("None of the specified channels are available")
         raw.pick_channels(channels_to_plot)
     
     # 计算结束时间
@@ -102,10 +102,10 @@ def get_device():
     """获取设备配置"""
     if torch.cuda.is_available():
         device = torch.device('cuda')
-        print(f"使用GPU: {torch.cuda.get_device_name(0)}")
+        print(f"Using GPU: {torch.cuda.get_device_name(0)}")
     else:
         device = torch.device('cpu')
-        print("使用CPU")
+        print("Using CPU")
     return device
 
 
@@ -177,38 +177,38 @@ def plot_metrics(metrics_history, save_path=None):
     
     # 训练和验证损失
     plt.subplot(2, 3, 1)
-    plt.plot(metrics_history['train_loss'], label='训练损失')
-    plt.plot(metrics_history['val_loss'], label='验证损失')
-    plt.title('损失值')
+    plt.plot(metrics_history['train_loss'], label='Train Loss')
+    plt.plot(metrics_history['val_loss'], label='Validation Loss')
+    plt.title('Loss Value')
     plt.xlabel('Epoch')
     plt.ylabel('Loss')
     plt.legend()
     
     # 准确率
     plt.subplot(2, 3, 2)
-    plt.plot(metrics_history['train_accuracy'], label='训练准确率')
-    plt.plot(metrics_history['val_accuracy'], label='验证准确率')
-    plt.title('准确率')
+    plt.plot(metrics_history['train_accuracy'], label='Train Accuracy')
+    plt.plot(metrics_history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Accuracy')
     plt.xlabel('Epoch')
     plt.ylabel('Accuracy')
     plt.legend()
     
     # F1分数
     plt.subplot(2, 3, 3)
-    plt.plot(metrics_history['train_f1'], label='训练F1')
-    plt.plot(metrics_history['val_f1'], label='验证F1')
-    plt.title('F1分数')
+    plt.plot(metrics_history['train_f1'], label='Train F1')
+    plt.plot(metrics_history['val_f1'], label='Validation F1')
+    plt.title('F1 Score')
     plt.xlabel('Epoch')
     plt.ylabel('F1 Score')
     plt.legend()
     
     # 精确率和召回率
     plt.subplot(2, 3, 4)
-    plt.plot(metrics_history['train_precision'], label='训练精确率')
-    plt.plot(metrics_history['val_precision'], label='验证精确率')
-    plt.plot(metrics_history['train_recall'], label='训练召回率')
-    plt.plot(metrics_history['val_recall'], label='验证召回率')
-    plt.title('精确率和召回率')
+    plt.plot(metrics_history['train_precision'], label='Train Precision')
+    plt.plot(metrics_history['val_precision'], label='Validation Precision')
+    plt.plot(metrics_history['train_recall'], label='Train Recall')
+    plt.plot(metrics_history['val_recall'], label='Validation Recall')
+    plt.title('Precision and Recall')
     plt.xlabel('Epoch')
     plt.ylabel('Score')
     plt.legend()
@@ -216,7 +216,7 @@ def plot_metrics(metrics_history, save_path=None):
     # AUC和EER (如果有)
     if 'val_auc' in metrics_history:
         plt.subplot(2, 3, 5)
-        plt.plot(metrics_history['val_auc'], label='验证AUC')
+        plt.plot(metrics_history['val_auc'], label='Validation AUC')
         plt.title('AUC')
         plt.xlabel('Epoch')
         plt.ylabel('AUC')
@@ -224,8 +224,8 @@ def plot_metrics(metrics_history, save_path=None):
     
     if 'val_eer' in metrics_history:
         plt.subplot(2, 3, 6)
-        plt.plot(metrics_history['val_eer'], label='验证EER')
-        plt.title('等错误率(EER)')
+        plt.plot(metrics_history['val_eer'], label='Validation EER')
+        plt.title('Equal Error Rate (EER)')
         plt.xlabel('Epoch')
         plt.ylabel('EER')
         plt.legend()
@@ -242,7 +242,7 @@ def plot_confusion_matrix(cm, classes=['同一人', '不同人'], save_path=None
     """绘制混淆矩阵"""
     plt.figure(figsize=(8, 6))
     plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.title('混淆矩阵')
+    plt.title('Confusion Matrix')
     plt.colorbar()
     tick_marks = np.arange(len(classes))
     plt.xticks(tick_marks, classes, rotation=45)
@@ -256,8 +256,8 @@ def plot_confusion_matrix(cm, classes=['同一人', '不同人'], save_path=None
                      color="white" if cm[i, j] > thresh else "black")
     
     plt.tight_layout()
-    plt.ylabel('真实标签')
-    plt.xlabel('预测标签')
+    plt.ylabel('True Label')
+    plt.xlabel('Predicted Label')
     
     if save_path:
         plt.savefig(save_path)
@@ -271,18 +271,18 @@ def plot_roc_curve(y_true, y_score, save_path=None):
     roc_auc = auc(fpr, tpr)
     
     plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC曲线 (AUC = {roc_auc:.3f})')
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC Curve (AUC = {roc_auc:.3f})')
     plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
-    plt.xlabel('假正例率')
-    plt.ylabel('真正例率')
-    plt.title('接收者操作特征曲线')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
     plt.legend(loc="lower right")
     
     if save_path:
         plt.savefig(save_path)
-        print(f"ROC曲线图保存到 {save_path}")
+        print(f"ROC curve plot saved to {save_path}")
     
     plt.show()
 

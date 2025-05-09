@@ -4,65 +4,63 @@
 seed: 42
 
 # 数据配置
-# config.yaml
 data:
   data_dir: './data'
   condition: 'eyes_open'
-  batch_size: 32
-  num_workers: 4
-  cache_data: true  # 内存缓存
-  use_hdf5_cache: true  # 使用HDF5缓存
-  hdf5_cache_dir: './data/hdf_cache'  # HDF5缓存目录
-  reset_cache: false  # 是否重置缓存
-  pos_ratio: 0.5
+  batch_size: 32  # 减小batch_size以适应3D CNN的内存需求
+  num_workers: 4  # 增加数据加载线程数
+  cache_data: true
+  use_hdf5_cache: true
+  hdf5_cache_dir: './data/hdf_cache'
+  reset_cache: false
+  pos_ratio: 0.5  # 正负样本平衡
   preprocess_params:
     l_freq: 1.0
-    h_freq: null
+    h_freq: 40.0  # 限制高频范围
     segment_duration: 2.0
     overlap: 0.5
     normalize: true
-    channels: null
+    channels: null  # 使用所有通道
     resample: 160.0
-    preprocess_cache: true  # 预处理缓存
-    mapping_method: 'cubic'  # 脑电地形图插值方法
-    use_log: true  # 是否对功率谱应用对数变换
-    freq_bands: null  # 自定义频段，默认为10-15Hz，步长0.5Hz
-
+    preprocess_cache: true
+    mapping_method: 'cubic'
+    use_log: true
+    freq_bands: [[8, 13], [13, 30]]  # alpha和beta频段
 
 # 模型配置
 model:
-  name: "LightP3DCNN"  # 选择模型: "P3DCNN", "SiameseBrainAuth", "LightP3DCNN"
-  input_shape: [110, 100, 10]  # 空-频特征图的形状 (高度, 宽度, 频带数)
+  name: "SiameseBrainAuth"  # 推荐使用孪生网络结构
+  input_shape: [110, 100, 10]  # 与代码中默认值一致
   num_classes: 2
-  pretrained: null  # 预训练模型路径，null表示不使用预训练
+  pretrained: null
 
 # 训练配置
 train:
-  epochs: 15
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  lr_scheduler: "cosine"  # "step", "cosine", "plateau"
+  epochs: 50  # 3D CNN需要更多epochs收敛
+  learning_rate: 0.0005  # 比常规CNN更小的学习率
+  weight_decay: 0.0001  # 适度的权重衰减
+  lr_scheduler: "cosine"  # 余弦退火适合3D CNN
   lr_scheduler_params:
-    step_size: 20         # 用于StepLR
-    gamma: 0.1            # 用于StepLR和ReduceLROnPlateau
-    patience: 10          # 用于ReduceLROnPlateau
+    step_size: 10
+    gamma: 0.1
+    patience: 5
   early_stopping: true
-  early_stopping_patience: 15
-  loss_function: "cross_entropy"  # 或 "bce", "focal", "contrastive"
+  early_stopping_patience: 10  # 更长的耐心
+  loss_function: "bce"  # 孪生网络适合二元交叉熵
 
 # 验证配置
 evaluation:
   metrics: ["accuracy", "precision", "recall", "f1", "auc", "eer"]
-  best_metric: "accuracy"  # 用于模型选择的指标
+  best_metric: "f1"  # F1分数对不平衡数据更鲁棒
   subject_split: 
     train: 0.7
     val: 0.15
     test: 0.15
-  monitor_subject_performance: true  # 是否监控每个受试者的性能
+  monitor_subject_performance: true
 
 # 日志配置
 logging:
-  log_tensor_shapes: false  # 是否记录张量形状信息
+  log_tensor_shapes: false  # 训练时关闭以减少日志量
 
 # 结果保存
 output:
@@ -70,4 +68,4 @@ output:
   log_dir: "./outputs/logs"
   results_dir: "./outputs/results"
   save_best_only: true
-  save_frequency: 5  # 每几个epoch保存一次
+  save_frequency: 3  

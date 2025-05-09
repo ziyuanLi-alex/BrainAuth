@@ -243,6 +243,32 @@ class SiameseBrainAuth(nn.Module):
             
             nn.Dropout(0.5)
         )
+        # self.feature_extractor = nn.Sequential(
+        #     # 空间方向卷积（保持原设计）
+        #     nn.Conv3d(1, 16, kernel_size=(5, 5, 1), padding='same'),
+        #     nn.ReLU(),
+            
+        #     # 频域方向卷积（保持原设计）
+        #     nn.Conv3d(16, 32, kernel_size=(1, 1, 5), padding='same'),
+        #     nn.ReLU(),
+            
+        #     # 三维卷积模块（简化通道数并减少重复结构）
+        #     nn.Conv3d(32, 64, kernel_size=(3, 3, 3), stride=2, padding=1),
+        #     nn.BatchNorm3d(64),
+        #     nn.ReLU(),
+            
+        #     # 使用深度可分离卷积替代常规卷积
+        #     nn.Conv3d(64, 64, kernel_size=(3, 3, 3), padding='same', groups=64),
+        #     nn.Conv3d(64, 128, kernel_size=1),
+        #     nn.ReLU(),
+            
+        #     # 最终下采样层（减少输出通道数）
+        #     nn.Conv3d(128, 192, kernel_size=(3, 3, 3), stride=2, padding=1),
+        #     nn.BatchNorm3d(192),
+        #     nn.ReLU(),
+            
+        #     nn.Dropout(0.4)  # 微调dropout率
+        # )
         
         # 计算特征提取后的尺寸
         dummy_input = torch.zeros(1, 1, *input_shape)
