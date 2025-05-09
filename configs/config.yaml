@@ -7,18 +7,21 @@ seed: 42
 data:
   data_dir: "./data"
   condition: "eyes_open"  # 'eyes_open' 或 'eyes_closed'
-  batch_size: 64
-  num_workers: 4
-  cache_data: false
+  batch_size: 128
+  num_workers: 8
+  cache_data: true
+  cache_dir: "./data/cache"
+  cache_reset: false  # 设置为true可强制重新生成缓存
   pos_ratio: 0.5  # 正样本(同一受试者)的比例
   preprocess_params:
     l_freq: 0.5        # 高通滤波频率
     h_freq: 45       # 低通滤波频率
     segment_duration: 2.0  # 每个样本的持续时间（秒）
     overlap: 0.5       # 样本间的重叠比例
-    normalize: true    # 是否进行标准化
+    normalize: false    # 是否进行标准化
     channels: null     # 要使用的通道列表(null表示使用全部)
     resample: 128      # 降采样频率(Hz)
+    preprocess_cache: true   # 是否预先缓存部分数据
 
 # 模型配置
 model:
@@ -29,7 +32,7 @@ model:
 
 # 训练配置
 train:
-  epochs: 100
+  epochs: 15
   learning_rate: 0.001
   weight_decay: 0.0001
   lr_scheduler: "cosine"  # "step", "cosine", "plateau"

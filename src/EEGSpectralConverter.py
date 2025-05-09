@@ -127,12 +127,12 @@ class EEGSpectralConverter:
             band_power: 频段功率，形状为[通道数]
         """
         # 找到频段对应的索引
-        idx = np.logical_and(freqs >= band[0], freqs <= band[1])
+        idx = np.logical_and(freqs >= band[0]-0.3, freqs <= band[1]+0.5)
         
         # 确保有足够的频率点
         if np.sum(idx) <= 1:
             logger.warning(f"频段 {band} 内频率点太少，可能导致功率估计不准确")
-            # 扩大搜索范围
+            #扩大搜索范围
             margin = 0.5  # Hz
             idx = np.logical_and(freqs >= band[0]-margin, freqs <= band[1]+margin)
         
