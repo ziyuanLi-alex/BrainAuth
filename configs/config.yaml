@@ -4,24 +4,30 @@
 seed: 42
 
 # 数据配置
+# config.yaml
 data:
-  data_dir: "./data"
-  condition: "eyes_open"  # 'eyes_open' 或 'eyes_closed'
-  batch_size: 128
-  num_workers: 8
-  cache_data: true
-  cache_dir: "./data/cache"
-  cache_reset: false  # 设置为true可强制重新生成缓存
-  pos_ratio: 0.5  # 正样本(同一受试者)的比例
+  data_dir: './data'
+  condition: 'eyes_open'
+  batch_size: 32
+  num_workers: 4
+  cache_data: true  # 内存缓存
+  use_hdf5_cache: true  # 使用HDF5缓存
+  hdf5_cache_dir: './data/hdf_cache'  # HDF5缓存目录
+  reset_cache: false  # 是否重置缓存
+  pos_ratio: 0.5
   preprocess_params:
-    l_freq: 0.5        # 高通滤波频率
-    h_freq: 45       # 低通滤波频率
-    segment_duration: 2.0  # 每个样本的持续时间（秒）
-    overlap: 0.5       # 样本间的重叠比例
-    normalize: false    # 是否进行标准化
-    channels: null     # 要使用的通道列表(null表示使用全部)
-    resample: 128      # 降采样频率(Hz)
-    preprocess_cache: true   # 是否预先缓存部分数据
+    l_freq: 1.0
+    h_freq: null
+    segment_duration: 2.0
+    overlap: 0.5
+    normalize: true
+    channels: null
+    resample: 160.0
+    preprocess_cache: true  # 预处理缓存
+    mapping_method: 'cubic'  # 脑电地形图插值方法
+    use_log: true  # 是否对功率谱应用对数变换
+    freq_bands: null  # 自定义频段，默认为10-15Hz，步长0.5Hz
+
 
 # 模型配置
 model:

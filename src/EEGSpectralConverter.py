@@ -65,7 +65,7 @@ class EEGSpectralConverter:
         # 为插值创建网格
         self.grid_x, self.grid_y = np.mgrid[0:output_shape[0], 0:output_shape[1]]
         
-        logger.info(f"初始化EEG空间-频率转换器，频段数: {len(self.freq_bands)}")
+        # logger.info(f"初始化EEG空间-频率转换器，频段数: {len(self.freq_bands)}")
         
     def _get_default_channel_positions(self) -> Dict[str, Tuple[float, float]]:
         """获取默认的电极位置（基于10-10系统）"""
