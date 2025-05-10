@@ -133,7 +133,7 @@ def load_checkpoint(checkpoint_path, model, optimizer=None):
         print(f"检查点不存在: {checkpoint_path}")
         return 0, 0
     
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     
     if optimizer:
@@ -238,7 +238,7 @@ def plot_metrics(metrics_history, save_path=None):
     
     plt.show()
 
-def plot_confusion_matrix(cm, classes=['同一人', '不同人'], save_path=None):
+def plot_confusion_matrix(cm, classes=['Same', 'Diff'], save_path=None):
     """绘制混淆矩阵"""
     plt.figure(figsize=(8, 6))
     plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
