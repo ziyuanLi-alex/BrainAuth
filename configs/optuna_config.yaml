@@ -1,0 +1,118 @@
+# Optuna超参数优化配置文件 - 专注于LightSiameseBrainAuth模型
+
+# 试验设置
+n_trials: 30               # 试验次数
+timeout: null              # 超时时间（秒），null表示不限制
+epochs: 15                 # 每个试验的训练轮数
+early_stopping_patience: 5 # 早停耐心值
+direction: "maximize"      # 优化方向: "maximize" 或 "minimize"
+metric: "f1"               # 优化目标指标: "accuracy", "f1", "auc", "eer" 等
+
+# 并行设置
+n_jobs: 1                  # 并行运行的作业数，1表示顺序执行
+
+# 模型搜索空间定义 - 专注于LightSiameseBrainAuth
+params:
+  # 卷积层参数
+  conv1_channels:      # 第一个卷积层通道数
+    min: 4
+    max: 16
+    step: 2
+  conv2_channels:      # 第二个卷积层通道数
+    min: 8
+    max: 32
+    step: 4
+  conv3_channels:      # 第三个卷积层通道数
+    min: 16
+    max: 64
+    step: 8
+  conv6_channels:      # 最后一个卷积层通道数
+    min: 32
+    max: 96
+    step: 16
+  
+  # 全连接层参数
+  hidden_size:         # 全连接层大小
+    min: 32
+    max: 256
+    step: 32
+  
+  # 正则化参数
+  dropout_rate:        # Dropout率
+    min: 0.1
+    max: 0.5
+  
+  # 批归一化
+  use_batch_norm:      # 是否使用批归一化
+    choices: [true, false]
+  
+  # 优化器参数
+  optimizer:           # 优化器类型
+    choices: ["adam", "adamw", "sgd"]
+  
+  learning_rate:       # 学习率
+    min: 0.00005
+    max: 0.005
+    
+  weight_decay:        # 权重衰减
+    min: 0.000001
+    max: 0.001
+  
+  # SGD特有参数
+  momentum:            # 动量（仅当optimizer为'sgd'时使用）
+    min: 0.8
+    max: 0.99
+  
+  # 损失函数选择
+  loss_function:       # 损失函数类型
+    choices: ["bce", "focal", "cross_entropy"]
+  
+  # Focal Loss参数 (仅当loss_function为'focal'时使用)
+  focal_gamma:         # Focal Loss的gamma参数
+    min: 1.0
+    max: 4.0
+  
+  # 对比损失参数
+  contrastive_margin:  # 对比损失的间隔参数
+    min: 0.5
+    max: 2.0
+  
+  # 学习率调度器
+  lr_scheduler:        # 学习率调度器类型
+    choices: ["step", "cosine", "plateau", "one_cycle"]
+  
+  # Step LR参数
+  step_size:           # 步长
+    min: 3
+    max: 8
+  
+  # 学习率衰减因子
+  gamma:               
+    min: 0.1
+    max: 0.5
+  
+  # ReduceLROnPlateau参数
+  patience:            # 调度器耐心值
+    min: 2
+    max: 5
+
+# 设备适配参数（用于Emotiv EPOC X适配）
+device_adaptation:
+  # 是否启用设备适配
+  enabled: false
+  
+  # 通道选择策略
+  channel_selection:
+    choices: ["emotiv_epoc_x", "custom_subset", "importance_based"]
+  
+  # 通道数量 (仅当channel_selection为'importance_based'时使用)
+  num_channels:
+    min: 8
+    max: 16
+    step: 2
+  
+  # Emotiv EPOC X通道列表
+  emotiv_channels: [
+    "AF3", "F7", "F3", "FC5", "T7", "P7", "O1", 
+    "O2", "P8", "T8", "FC6", "F4", "F8", "AF4"
+  ]
