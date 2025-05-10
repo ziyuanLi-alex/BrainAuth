@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import logging
 import yaml
 import os
+from typing import Tuple, List, Optional
 
 # 配置日志
 logging.basicConfig(
@@ -205,117 +206,387 @@ class P3DCNN(nn.Module):
         return output
 
 class SiameseBrainAuth(nn.Module):
-    """
-    孪生网络结构的BrainAuth模型
-    使用共享权重的网络处理一对EEG样本
+    """孪生网络模型，用于EEG身份验证
+    
+    使用共享权重的特征提取器处理一对EEG特征图，然后比较它们的相似性
     """
     
-    def __init__(self, input_shape=(110, 100, 10)):
-        """
-        初始化孪生网络
+    def __init__(self, input_shape: Tuple[int, int, int] = (110, 100, 10), 
+                conv_channels: Optional[List[int]] = None,
+                hidden_size: int = 256,
+                dropout_rate: float = 0.5,
+                use_batch_norm: bool = True):
+        """初始化模型
         
-        参数:
-            input_shape: 输入空-频特征图的形状 (高度, 宽度, 频带数)
+        Args:
+            input_shape: 输入特征图形状 (D, H, W)
+            conv_channels: 卷积层通道数列表 [conv1,...,conv6]，如果为None则使用默认值
+            hidden_size: 全连接层隐藏单元数量
+            dropout_rate: Dropout比例
+            use_batch_norm: 是否使用批归一化
         """
         super(SiameseBrainAuth, self).__init__()
         
-        # 共享的特征提取网络
-        self.feature_extractor = nn.Sequential(
-            # 空间方向卷积
-            nn.Conv3d(1, 16, kernel_size=(5, 5, 1), padding='same'),
-            nn.ReLU(),
-            
-            # 频域方向卷积
-            nn.Conv3d(16, 32, kernel_size=(1, 1, 5), padding='same'),
-            nn.ReLU(),
-            
-            # 三维卷积-池化模块
-            nn.Conv3d(32, 64, kernel_size=(3, 3, 3), stride=2, padding=1),
-            nn.BatchNorm3d(64),
-            nn.ReLU(),
-            
-            nn.Conv3d(64, 128, kernel_size=(3, 3, 3), padding='same'),
-            nn.ReLU(),
-            
-            nn.Conv3d(128, 256, kernel_size=(3, 3, 3), stride=2, padding=1),
-            nn.BatchNorm3d(256),
-            nn.ReLU(),
-            
-            nn.Dropout(0.5)
-        )
-        # self.feature_extractor = nn.Sequential(
-        #     # 空间方向卷积（保持原设计）
-        #     nn.Conv3d(1, 16, kernel_size=(5, 5, 1), padding='same'),
-        #     nn.ReLU(),
-            
-        #     # 频域方向卷积（保持原设计）
-        #     nn.Conv3d(16, 32, kernel_size=(1, 1, 5), padding='same'),
-        #     nn.ReLU(),
-            
-        #     # 三维卷积模块（简化通道数并减少重复结构）
-        #     nn.Conv3d(32, 64, kernel_size=(3, 3, 3), stride=2, padding=1),
-        #     nn.BatchNorm3d(64),
-        #     nn.ReLU(),
-            
-        #     # 使用深度可分离卷积替代常规卷积
-        #     nn.Conv3d(64, 64, kernel_size=(3, 3, 3), padding='same', groups=64),
-        #     nn.Conv3d(64, 128, kernel_size=1),
-        #     nn.ReLU(),
-            
-        #     # 最终下采样层（减少输出通道数）
-        #     nn.Conv3d(128, 192, kernel_size=(3, 3, 3), stride=2, padding=1),
-        #     nn.BatchNorm3d(192),
-        #     nn.ReLU(),
-            
-        #     nn.Dropout(0.4)  # 微调dropout率
-        # )
+        # 如果没有指定卷积通道数，使用默认值
+        if conv_channels is None or len(conv_channels) < 6:
+            conv_channels = [16, 32, 64, 128, 256, 512]
         
-        # 计算特征提取后的尺寸
-        dummy_input = torch.zeros(1, 1, *input_shape)
-        dummy_output = self.feature_extractor(dummy_input)
-        feature_size = dummy_output.numel()
+        self.dropout_rate = dropout_rate
+        self.use_batch_norm = use_batch_norm
         
-        # 全连接层进行特征比较
+        # 输入形状
+        self.input_shape = input_shape
+        
+        # 构建特征提取器
+        layers = []
+        
+        # Conv1 层：1 -> conv_channels[0]
+        layers.append(nn.Conv3d(1, conv_channels[0], kernel_size=3, stride=1, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[0]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv2 层：conv_channels[0] -> conv_channels[1]
+        layers.append(nn.Conv3d(conv_channels[0], conv_channels[1], kernel_size=3, stride=1, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[1]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv3 层：conv_channels[1] -> conv_channels[2]，步长2
+        layers.append(nn.Conv3d(conv_channels[1], conv_channels[2], kernel_size=3, stride=2, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[2]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv4 层：conv_channels[2] -> conv_channels[3]
+        layers.append(nn.Conv3d(conv_channels[2], conv_channels[3], kernel_size=3, stride=1, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[3]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv5 层：conv_channels[3] -> conv_channels[4]，步长2
+        layers.append(nn.Conv3d(conv_channels[3], conv_channels[4], kernel_size=3, stride=2, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[4]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv6 层：conv_channels[4] -> conv_channels[5]
+        layers.append(nn.Conv3d(conv_channels[4], conv_channels[5], kernel_size=3, stride=1, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[5]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # 创建特征提取器
+        self.feature_extractor = nn.Sequential(*layers)
+        
+        # 计算特征维度 - 使用一个临时tensor计算输出尺寸
+        with torch.no_grad():
+            # 计算卷积网络输出的特征维度
+            dummy_input = torch.zeros(1, 1, *input_shape)
+            dummy_output = self.feature_extractor(dummy_input)
+            self.flat_features = dummy_output.numel() // dummy_output.size(0)
+            print(f"卷积输出特征的形状: {dummy_output.shape}")
+            print(f"展平后的特征维度: {self.flat_features}")
+        
+        # 全连接层
         self.fc = nn.Sequential(
-            nn.Linear(feature_size * 2, 512),  # 两个特征向量拼接
-            nn.ReLU(),
-            nn.Dropout(0.5),
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256, 1)  # 二分类问题（同一人/不同人）
+            nn.Linear(self.flat_features * 2, hidden_size),  # 两倍特征大小，因为我们将连接两个特征向量
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout_rate),
+            nn.Linear(hidden_size, 1)  # 输出一个相似度得分
         )
     
     def forward_one(self, x):
-        """处理单个输入样本"""
-        if x.dim() == 4:
+        """前向传播单个样本
+        
+        Args:
+            x: 脑电图特征图，形状 (batch_size, depth, height, width)
+                
+        Returns:
+            特征向量
+        """
+        # 确保输入是5D张量 [batch, channel, depth, height, width]
+        if len(x.shape) == 4:
             x = x.unsqueeze(1)
+        
+        # 通过共享的特征提取器
         x = self.feature_extractor(x)
-        x = x.view(x.size(0), -1)  # 展平
+        
+        # 展平特征
+        x = x.view(x.size(0), -1)
+        
         return x
     
     def forward(self, x1, x2):
-        """
-        处理一对输入样本
+        """前向传播两个样本
         
-        参数:
-            x1, x2: 一对EEG样本
-            
-        返回:
-            output: 相似度得分，表示两个样本属于同一人的概率
+        Args:
+            x1: 第一个脑电图特征图，形状 (batch_size, depth, height, width)
+            x2: 第二个脑电图特征图，形状 (batch_size, depth, height, width)
+                
+        Returns:
+            相似度得分，形状 (batch_size, 1)
         """
-        # 提取特征
+        # 分别提取特征
         feat1 = self.forward_one(x1)
         feat2 = self.forward_one(x2)
         
-        # 拼接特征
+        # 连接特征向量
         combined = torch.cat((feat1, feat2), 1)
         
-        # 计算相似度
-        output = torch.sigmoid(self.fc(combined))
+        # 通过全连接层计算相似度
+        similarity = self.fc(combined)
         
-        return output
+        return similarity
+    
+    def get_embedding(self, x):
+        """获取输入的嵌入向量表示
+        
+        这个方法可用于提取特征，用于可视化或其他分析
+        
+        Args:
+            x: 脑电图特征图，形状 (batch_size, depth, height, width)
+                
+        Returns:
+            特征嵌入向量
+        """
+        return self.forward_one(x)
 
-#TODO: 生成dummy数据测试向量维度
+
+class LightSiameseBrainAuth(nn.Module):
+    """轻量级孪生网络模型，用于EEG身份验证
+    
+    SiameseBrainAuth的轻量级版本，减少卷积层数和通道数以降低计算复杂度
+    """
+    
+    def __init__(self, input_shape: Tuple[int, int, int] = (110, 100, 10), 
+                conv_channels: Optional[List[int]] = None,
+                hidden_size: int = 128,
+                dropout_rate: float = 0.3,
+                use_batch_norm: bool = True):
+        """初始化模型
+        
+        Args:
+            input_shape: 输入特征图形状 (D, H, W)
+            conv_channels: 卷积层通道数列表 [conv1,conv2,conv3,conv6]，如果为None则使用默认值
+            hidden_size: 全连接层隐藏单元数量
+            dropout_rate: Dropout比例
+            use_batch_norm: 是否使用批归一化
+        """
+        super(LightSiameseBrainAuth, self).__init__()
+        
+        # 如果没有指定卷积通道数，使用默认值
+        if conv_channels is None or len(conv_channels) < 4:
+            conv_channels = [8, 16, 32, 64]
+        
+        self.dropout_rate = dropout_rate
+        self.use_batch_norm = use_batch_norm
+        
+        # 输入形状
+        self.input_shape = input_shape
+        
+        # 构建特征提取器
+        layers = []
+        
+        # Conv1 层：1 -> conv_channels[0]
+        layers.append(nn.Conv3d(1, conv_channels[0], kernel_size=3, stride=1, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[0]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv2 层：conv_channels[0] -> conv_channels[1]，步长2
+        layers.append(nn.Conv3d(conv_channels[0], conv_channels[1], kernel_size=3, stride=2, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[1]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv3 层：conv_channels[1] -> conv_channels[2]，步长2
+        layers.append(nn.Conv3d(conv_channels[1], conv_channels[2], kernel_size=3, stride=2, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[2]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # Conv6 层（跳过4和5）：conv_channels[2] -> conv_channels[3]
+        layers.append(nn.Conv3d(conv_channels[2], conv_channels[3], kernel_size=3, stride=1, padding=1))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm3d(conv_channels[3]))
+        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.Dropout3d(p=dropout_rate))
+        
+        # 创建特征提取器
+        self.feature_extractor = nn.Sequential(*layers)
+        
+        # 计算特征维度 - 使用一个临时tensor计算输出尺寸
+        with torch.no_grad():
+            # 计算卷积网络输出的特征维度
+            dummy_input = torch.zeros(1, 1, *input_shape)
+            dummy_output = self.feature_extractor(dummy_input)
+            self.flat_features = dummy_output.numel() // dummy_output.size(0)
+            print(f"轻量级模型卷积输出特征的形状: {dummy_output.shape}")
+            print(f"轻量级模型展平后的特征维度: {self.flat_features}")
+        
+        # 全连接层
+        self.fc = nn.Sequential(
+            nn.Linear(self.flat_features * 2, hidden_size),  # 两倍特征大小，因为我们将连接两个特征向量
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=dropout_rate),
+            nn.Linear(hidden_size, 1)  # 输出一个相似度得分
+        )
+    
+    def forward_one(self, x):
+        """前向传播单个样本
+        
+        Args:
+            x: 脑电图特征图，形状 (batch_size, depth, height, width)
+                
+        Returns:
+            特征向量
+        """
+        # 确保输入是5D张量 [batch, channel, depth, height, width]
+        if len(x.shape) == 4:
+            x = x.unsqueeze(1)
+        
+        # 通过共享的特征提取器
+        x = self.feature_extractor(x)
+        
+        # 展平特征
+        x = x.view(x.size(0), -1)
+        
+        return x
+    
+    def forward(self, x1, x2):
+        """前向传播两个样本
+        
+        Args:
+            x1: 第一个脑电图特征图，形状 (batch_size, depth, height, width)
+            x2: 第二个脑电图特征图，形状 (batch_size, depth, height, width)
+                
+        Returns:
+            相似度得分，形状 (batch_size, 1)
+        """
+        # 分别提取特征
+        feat1 = self.forward_one(x1)
+        feat2 = self.forward_one(x2)
+        
+        # 连接特征向量
+        combined = torch.cat((feat1, feat2), 1)
+        
+        # 通过全连接层计算相似度
+        similarity = self.fc(combined)
+        
+        return similarity
+    
+    def get_embedding(self, x):
+        """获取输入的嵌入向量表示
+        
+        这个方法可用于提取特征，用于可视化或其他分析
+        
+        Args:
+            x: 脑电图特征图，形状 (batch_size, depth, height, width)
+                
+        Returns:
+            特征嵌入向量
+        """
+        return self.forward_one(x)
+
+
+# 辅助函数：通道适配函数，用于Emotiv EPOC X的适配
+def adapt_channels_for_emotiv(original_channels, target_channels=None):
+    """
+    将原始EEG通道适配到目标通道配置
+    
+    Args:
+        original_channels: 原始EEG通道列表
+        target_channels: 目标通道列表，默认为Emotiv EPOC X通道
+        
+    Returns:
+        映射字典和保留的通道索引
+    """
+    if target_channels is None:
+        # Emotiv EPOC X 通道配置
+        target_channels = [
+            "AF3", "F7", "F3", "FC5", "T7", "P7", "O1", 
+            "O2", "P8", "T8", "FC6", "F4", "F8", "AF4"
+        ]
+    
+    # 创建通道映射
+    channel_map = {}
+    kept_indices = []
+    
+    # 对每个目标通道，找到原始通道中的匹配项
+    for i, channel in enumerate(original_channels):
+        # 标准化通道名称（去除空格和转换为大写）
+        norm_channel = channel.strip().upper()
+        
+        if norm_channel in [ch.strip().upper() for ch in target_channels]:
+            channel_map[channel] = channel
+            kept_indices.append(i)
+        else:
+            # 尝试模糊匹配
+            for target in target_channels:
+                norm_target = target.strip().upper()
+                if norm_target in norm_channel or norm_channel in norm_target:
+                    channel_map[channel] = target
+                    kept_indices.append(i)
+                    break
+    
+    return channel_map, kept_indices
+
+
+# 测试函数
+def test_siamese_models():
+    """测试孪生网络模型"""
+    # 设置随机种子
+    torch.manual_seed(42)
+    
+    # 输入形状
+    input_shape = (110, 100, 10)
+    batch_size = 4
+    
+    # 创建随机输入数据
+    x1 = torch.randn(batch_size, *input_shape)
+    x2 = torch.randn(batch_size, *input_shape)
+    
+    print("=== 测试 SiameseBrainAuth 模型 ===")
+    print(f"输入 x1 形状: {x1.shape}")
+    print(f"输入 x2 形状: {x2.shape}")
+    
+    # 创建模型
+    model = SiameseBrainAuth(input_shape=input_shape)
+    
+    # 前向传播
+    output = model(x1, x2)
+    print(f"输出形状: {output.shape}")
+    print(f"输出样本: {output[:2]}")
+    
+    print("\n=== 测试 LightSiameseBrainAuth 模型 ===")
+    # 创建轻量级模型
+    light_model = LightSiameseBrainAuth(input_shape=input_shape)
+    
+    # 前向传播
+    light_output = light_model(x1, x2)
+    print(f"轻量级模型输出形状: {light_output.shape}")
+    print(f"轻量级模型输出样本: {light_output[:2]}")
+    
+    # 提取嵌入向量
+    embedding = light_model.get_embedding(x1)
+    print(f"嵌入向量形状: {embedding.shape}")
+    
+    # 打印模型信息
+    print("\n=== 模型信息 ===")
+    print(f"SiameseBrainAuth 参数数量: {sum(p.numel() for p in model.parameters())}")
+    print(f"LightSiameseBrainAuth 参数数量: {sum(p.numel() for p in light_model.parameters())}")
+    
+    print("测试完成!")
 
 def test_p3dcnn():
     """测试P3DCNN模型"""
@@ -356,223 +627,6 @@ def test_p3dcnn():
     print(f"总参数数量: {total_params}")
     print(f"有梯度的参数数量: {params_with_grad}")
 
-class LightP3DCNN(nn.Module):
-    """轻量级P3DCNN模型，减少90%以上参数"""
-    
-    def __init__(self, input_shape=(110, 100, 10), num_classes=2):
-        super(LightP3DCNN, self).__init__()
-        self.input_shape = input_shape
-        
-        # 减少通道数和卷积核尺寸
-        # 空间方向卷积: 从16通道降至8通道，核尺寸从5x5降至3x3
-        self.conv1 = nn.Conv3d(
-            in_channels=1,
-            out_channels=8,  # 原16，减少一半
-            kernel_size=(3, 3, 1),  # 原(5, 5, 1)
-            stride=1,
-            padding='same'
-        )
-        
-        # 频域方向卷积: 从32通道降至16通道，核尺寸从5降至3
-        self.conv2 = nn.Conv3d(
-            in_channels=8,  # 原16
-            out_channels=16,  # 原32
-            kernel_size=(1, 1, 3),  # 原(1, 1, 5)
-            stride=1,
-            padding='same'
-        )
-        
-        # 简化三维卷积-池化模块
-        # 从64通道降至32通道
-        self.conv3 = nn.Conv3d(
-            in_channels=16,  # 原32
-            out_channels=32,  # 原64
-            kernel_size=(3, 3, 2),  # 减小卷积核尺寸
-            stride=2,
-            padding=1
-        )
-        self.bn1 = nn.BatchNorm3d(32)  # 原64
-        
-        # 直接跳过中间卷积层(conv4, conv5)
-        # 最后一个卷积层: 从256通道降至64通道
-        self.conv6 = nn.Conv3d(
-            in_channels=32,  # 原128
-            out_channels=64,  # 原256
-            kernel_size=(3, 3, 2),  # 减小卷积核尺寸
-            stride=2,
-            padding=1
-        )
-        self.bn2 = nn.BatchNorm3d(64)  # 原256
-        self.dropout = nn.Dropout(0.3)  # 降低dropout比例以加快训练
-        
-        # 计算卷积后的特征尺寸
-        conv_output_size = self._get_conv_output_size(input_shape)
-        
-        # 全连接层减少神经元数量
-        self.fc = nn.Linear(conv_output_size, 64)  # 原256，减少到64
-        
-        # 输出层
-        self.out = nn.Linear(64, num_classes)  # 原256->2，现在64->2
-    
-    def _get_conv_output_size(self, shape):
-        """计算卷积层输出的特征尺寸"""
-        batch_size = 1
-        input_tensor = torch.zeros(batch_size, 1, *shape)
-        output = self._forward_conv(input_tensor)
-        return output.numel() // batch_size
-    
-    def _forward_conv(self, x):
-        """前向传播卷积部分"""
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        
-        # 三维卷积-池化模块
-        x = F.relu(self.bn1(self.conv3(x)))
-        # 去掉原来的conv4和conv5
-        x = F.relu(self.bn2(self.conv6(x)))
-        x = self.dropout(x)
-        return x
-    
-    def forward(self, x1, x2):
-        """前向传播"""
-        # 确保输入形状正确 (batch_size, channels, depth, height, width)
-        if x1.dim() == 4:
-            x1 = x1.unsqueeze(1)
-        if x2.dim() == 4:
-            x2 = x2.unsqueeze(1)
-        
-        # 分别通过卷积层提取特征
-        x1_conv = self._forward_conv(x1)
-        x2_conv = self._forward_conv(x2)
-        
-        # 特征差异计算
-        x_diff = torch.abs(x1_conv - x2_conv)
-        x_flat = x_diff.view(x_diff.size(0), -1)
-        
-        # 全连接层
-        x = F.relu(self.fc(x_flat))
-        
-        # 输出层
-        output = self.out(x)
-        
-        return output
-
-class LightSiameseBrainAuth(nn.Module):
-    """轻量级孪生网络结构的BrainAuth模型"""
-
-    def __init__(self, input_shape=(110, 100, 10)):
-        """
-        初始化轻量级孪生网络
-
-        参数:
-            input_shape: 输入空-频特征图的形状 (高度, 宽度, 频带数)
-        """
-        super(LightSiameseBrainAuth, self).__init__()
-        self.input_shape = input_shape
-
-        # 共享的轻量级特征提取网络
-        # 结构参考 LightP3DCNN 的 _forward_conv 部分
-        self.feature_extractor = nn.Sequential(
-            # 空间方向卷积 (类似 LightP3DCNN.conv1)
-            nn.Conv3d(1, 8, kernel_size=(3, 3, 1), padding='same'),
-            nn.ReLU(),
-            # 频域方向卷积 (类似 LightP3DCNN.conv2)
-            nn.Conv3d(8, 16, kernel_size=(1, 1, 3), padding='same'),
-            nn.ReLU(),
-            # 第一个卷积-BN块 (类似 LightP3DCNN.conv3 & bn1)
-            nn.Conv3d(16, 32, kernel_size=(3, 3, 2), stride=2, padding=1),
-            nn.BatchNorm3d(32),
-            nn.ReLU(),
-            # 第二个卷积-BN块 (类似 LightP3DCNN.conv6 & bn2)
-            nn.Conv3d(32, 64, kernel_size=(3, 3, 2), stride=2, padding=1),
-            nn.BatchNorm3d(64),
-            nn.ReLU(),
-            nn.Dropout(0.3) # 与 LightP3DCNN 一致的 dropout
-        )
-
-        # 计算特征提取后的尺寸
-        # 创建一个与输入形状相同的虚拟张量
-        dummy_input = torch.zeros(1, 1, *input_shape) # (batch_size, channels, depth, height, width)
-        dummy_output = self.feature_extractor(dummy_input)
-        feature_size = dummy_output.numel() # 计算展平后的特征数量
-
-        # 简化的全连接层进行特征比较
-        self.fc = nn.Sequential(
-            nn.Linear(feature_size * 2, 128),  # 两个特征向量拼接，减少神经元数量
-            nn.ReLU(),
-            nn.Dropout(0.3), # 保持与特征提取器一致的dropout
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Linear(64, 1)  # 二分类问题（同一人/不同人）
-        )
-
-    def forward_one(self, x):
-        """处理单个输入样本"""
-        if x.dim() == 4: # (batch, height, width, bands)
-            x = x.unsqueeze(1) # (batch, 1, height, width, bands) -> (batch, channel, D, H, W) for Conv3D
-                               # PyTorch Conv3D expects (N, C, D, H, W)
-                               # Here, bands is D, height is H, width is W
-                               # So, (batch, 1, bands, height, width) if input_shape is (height, width, bands)
-                               # Let's assume input_shape is (D, H, W) as per (110, 100, 10)
-                               # where 110 is D (depth/bands), 100 is H, 10 is W. This seems unusual.
-                               # Standard is (height, width, bands/channels for 2D image)
-                               # For 3D EEG (height, width, bands) -> (D, H, W) for Conv3D
-                               # input_shape = (110, 100, 10) -> (D=110, H=100, W=10)
-                               # So x.unsqueeze(1) makes it (N, 1, D, H, W) which is correct.
-        x = self.feature_extractor(x)
-        x = x.view(x.size(0), -1)  # 展平
-        return x
-
-    def forward(self, x1, x2):
-        """
-        处理一对输入样本
-        """
-        feat1 = self.forward_one(x1)
-        feat2 = self.forward_one(x2)
-        combined = torch.cat((feat1, feat2), 1)
-        output = torch.sigmoid(self.fc(combined))
-        return output
-
-def test_siamese_brainauth():
-    """测试SiameseBrainAuth模型"""
-    print("\n=== 测试 SiameseBrainAuth 模型 ===")
-    
-    # 获取当前设备
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # 创建模型实例
-    input_shape = (110, 100, 10)
-    model = SiameseBrainAuth(input_shape=input_shape).to(device)
-    
-    # 创建一批测试数据并移至设备
-    batch_size = 4
-    x1 = torch.randn(batch_size, *input_shape).to(device)
-    x2 = torch.randn(batch_size, *input_shape).to(device)
-    
-    # 前向传播
-    print(f"输入 x1 形状: {x1.shape}")
-    print(f"输入 x2 形状: {x2.shape}")
-    
-    output = model(x1, x2)
-    print(f"输出形状: {output.shape}")
-    
-    # 测试后向传播
-    labels = torch.randint(0, 2, (batch_size, 1)).float().to(device)
-    criterion = nn.BCELoss()
-    loss = criterion(output, labels)
-    print(f"损失值: {loss.item()}")
-    
-    # 梯度反向传播
-    loss.backward()
-    print("梯度反向传播成功")
-    
-    # 测试获取参数梯度
-    total_params = sum(p.numel() for p in model.parameters())
-    params_with_grad = sum(p.numel() for p in model.parameters() if p.grad is not None)
-    print(f"总参数数量: {total_params}")
-    print(f"有梯度的参数数量: {params_with_grad}")
-
-
 def inspect_model_architecture(model, name):
     """检查并打印模型架构"""
     print(f"\n=== {name} 架构 ===")
@@ -604,16 +658,19 @@ if __name__ == "__main__":
     
     # 创建模型实例用于架构检查
     input_shape = (110, 100, 10)
-    p3dcnn_model = P3DCNN(input_shape=input_shape, num_classes=2).to(device)
-    siamese_model = LightSiameseBrainAuth(input_shape=input_shape).to(device)
+    # p3dcnn_model = P3DCNN(input_shape=input_shape, num_classes=2).to(device)
+    light_siamese_model = LightSiameseBrainAuth(input_shape=input_shape).to(device)
+    siamese_model = SiameseBrainAuth(input_shape=input_shape).to(device)
     
     # 检查模型架构
-    inspect_model_architecture(p3dcnn_model, "P3DCNN模型")
+    # inspect_model_architecture(p3dcnn_model, "P3DCNN模型")
     inspect_model_architecture(siamese_model, "SiameseBrainAuth模型")
+    inspect_model_architecture(light_siamese_model, "LightSiameseBrainAuth模型")
     
     # 运行模型测试
-    test_p3dcnn()
-    test_siamese_brainauth()
+    # test_p3dcnn()
+    # test_siamese_brainauth()
+    test_siamese_models()
     
     print("\n所有测试完成!")
     

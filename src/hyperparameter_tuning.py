@@ -1,6 +1,5 @@
 import os
 import yaml
-import optuna
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -11,6 +10,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
+import optuna
 
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -5,3 +5,5 @@ data/*
 *.pyc
 *.log
 *.pth
+*.db
+*.pt
