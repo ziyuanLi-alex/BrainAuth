@@ -14,7 +14,7 @@ from datetime import datetime
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from models.brainauth_model import P3DCNN, SiameseBrainAuth, LightP3DCNN
+from models.brainauth_model import P3DCNN, SiameseBrainAuth, LightP3DCNN, LightSiameseBrainAuth
 from src.dataset import BrainAuthDataset, get_dataloaders
 from src.utils import (
     set_seed, load_config, get_device, create_dirs,
@@ -214,6 +214,10 @@ def train_model(config_path):
         )
     elif model_config['name'] == 'SiameseBrainAuth':
         model = SiameseBrainAuth(
+            input_shape=tuple(model_config['input_shape'])
+        )
+    elif model_config['name'] == 'LightSiameseBrainAuth':
+        model = LightSiameseBrainAuth(
             input_shape=tuple(model_config['input_shape'])
         )
     elif model_config['name'] == 'LightP3DCNN':

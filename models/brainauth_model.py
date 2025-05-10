@@ -457,7 +457,81 @@ class LightP3DCNN(nn.Module):
         
         return output
 
+class LightSiameseBrainAuth(nn.Module):
+    """轻量级孪生网络结构的BrainAuth模型"""
 
+    def __init__(self, input_shape=(110, 100, 10)):
+        """
+        初始化轻量级孪生网络
+
+        参数:
+            input_shape: 输入空-频特征图的形状 (高度, 宽度, 频带数)
+        """
+        super(LightSiameseBrainAuth, self).__init__()
+        self.input_shape = input_shape
+
+        # 共享的轻量级特征提取网络
+        # 结构参考 LightP3DCNN 的 _forward_conv 部分
+        self.feature_extractor = nn.Sequential(
+            # 空间方向卷积 (类似 LightP3DCNN.conv1)
+            nn.Conv3d(1, 8, kernel_size=(3, 3, 1), padding='same'),
+            nn.ReLU(),
+            # 频域方向卷积 (类似 LightP3DCNN.conv2)
+            nn.Conv3d(8, 16, kernel_size=(1, 1, 3), padding='same'),
+            nn.ReLU(),
+            # 第一个卷积-BN块 (类似 LightP3DCNN.conv3 & bn1)
+            nn.Conv3d(16, 32, kernel_size=(3, 3, 2), stride=2, padding=1),
+            nn.BatchNorm3d(32),
+            nn.ReLU(),
+            # 第二个卷积-BN块 (类似 LightP3DCNN.conv6 & bn2)
+            nn.Conv3d(32, 64, kernel_size=(3, 3, 2), stride=2, padding=1),
+            nn.BatchNorm3d(64),
+            nn.ReLU(),
+            nn.Dropout(0.3) # 与 LightP3DCNN 一致的 dropout
+        )
+
+        # 计算特征提取后的尺寸
+        # 创建一个与输入形状相同的虚拟张量
+        dummy_input = torch.zeros(1, 1, *input_shape) # (batch_size, channels, depth, height, width)
+        dummy_output = self.feature_extractor(dummy_input)
+        feature_size = dummy_output.numel() # 计算展平后的特征数量
+
+        # 简化的全连接层进行特征比较
+        self.fc = nn.Sequential(
+            nn.Linear(feature_size * 2, 128),  # 两个特征向量拼接，减少神经元数量
+            nn.ReLU(),
+            nn.Dropout(0.3), # 保持与特征提取器一致的dropout
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)  # 二分类问题（同一人/不同人）
+        )
+
+    def forward_one(self, x):
+        """处理单个输入样本"""
+        if x.dim() == 4: # (batch, height, width, bands)
+            x = x.unsqueeze(1) # (batch, 1, height, width, bands) -> (batch, channel, D, H, W) for Conv3D
+                               # PyTorch Conv3D expects (N, C, D, H, W)
+                               # Here, bands is D, height is H, width is W
+                               # So, (batch, 1, bands, height, width) if input_shape is (height, width, bands)
+                               # Let's assume input_shape is (D, H, W) as per (110, 100, 10)
+                               # where 110 is D (depth/bands), 100 is H, 10 is W. This seems unusual.
+                               # Standard is (height, width, bands/channels for 2D image)
+                               # For 3D EEG (height, width, bands) -> (D, H, W) for Conv3D
+                               # input_shape = (110, 100, 10) -> (D=110, H=100, W=10)
+                               # So x.unsqueeze(1) makes it (N, 1, D, H, W) which is correct.
+        x = self.feature_extractor(x)
+        x = x.view(x.size(0), -1)  # 展平
+        return x
+
+    def forward(self, x1, x2):
+        """
+        处理一对输入样本
+        """
+        feat1 = self.forward_one(x1)
+        feat2 = self.forward_one(x2)
+        combined = torch.cat((feat1, feat2), 1)
+        output = torch.sigmoid(self.fc(combined))
+        return output
 
 def test_siamese_brainauth():
     """测试SiameseBrainAuth模型"""
@@ -531,7 +605,7 @@ if __name__ == "__main__":
     # 创建模型实例用于架构检查
     input_shape = (110, 100, 10)
     p3dcnn_model = P3DCNN(input_shape=input_shape, num_classes=2).to(device)
-    siamese_model = SiameseBrainAuth(input_shape=input_shape).to(device)
+    siamese_model = LightSiameseBrainAuth(input_shape=input_shape).to(device)
     
     # 检查模型架构
     inspect_model_architecture(p3dcnn_model, "P3DCNN模型")

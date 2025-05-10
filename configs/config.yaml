@@ -7,7 +7,7 @@ seed: 42
 data:
   data_dir: './data'
   condition: 'eyes_open'
-  batch_size: 32  # 减小batch_size以适应3D CNN的内存需求
+  batch_size: 64  # 减小batch_size以适应3D CNN的内存需求
   num_workers: 1  # 增加数据加载线程数
   cache_data: true
   use_hdf5_cache: true
@@ -29,7 +29,7 @@ data:
 
 # 模型配置
 model:
-  name: "SiameseBrainAuth"  # 推荐使用孪生网络结构
+  name: "LightSiameseBrainAuth"  # "LightSiameseBrainAuth"
   input_shape: [110, 100, 10]  # 与代码中默认值一致
   num_classes: 2
   pretrained: null
