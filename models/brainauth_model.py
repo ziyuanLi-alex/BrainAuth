@@ -357,7 +357,17 @@ class SiameseBrainAuth(nn.Module):
             特征嵌入向量
         """
         return self.forward_one(x)
-
+    
+    # 在SiameseBrainAuth和LightSiameseBrainAuth中
+    def _initialize_weights(self, method='kaiming'):
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
+                if method == 'kaiming':
+                    nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+                elif method == 'xavier':
+                    nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
 class LightSiameseBrainAuth(nn.Module):
     """轻量级孪生网络模型，用于EEG身份验证
@@ -497,6 +507,17 @@ class LightSiameseBrainAuth(nn.Module):
             特征嵌入向量
         """
         return self.forward_one(x)
+    
+    # 在SiameseBrainAuth和LightSiameseBrainAuth中
+    def _initialize_weights(self, method='kaiming'):
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
+                if method == 'kaiming':
+                    nn.init.kaiming_normal_(m.weight, nonlinearity='relu')
+                elif method == 'xavier':
+                    nn.init.xavier_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
 
 
 # 辅助函数：通道适配函数，用于Emotiv EPOC X的适配
