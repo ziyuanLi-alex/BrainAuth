@@ -46,7 +46,7 @@ train:
     patience: 5
   early_stopping: true
   early_stopping_patience: 15  # 更长的耐心
-  loss_function: "bce"  # 孪生网络适合二元交叉熵
+  loss_function: "contrastive"  # 孪生网络适合二元交叉熵
 
 # 验证配置
 evaluation:

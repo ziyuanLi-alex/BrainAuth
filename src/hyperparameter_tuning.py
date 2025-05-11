@@ -344,7 +344,7 @@ class OptunaOptimizer:
                 self.optuna_config['params']['gamma']['max']
             )
             return torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, mode='min', patience=patience, factor=gamma, verbose=True
+                optimizer, mode='min', patience=patience, factor=gamma
             )
         elif scheduler_name == 'one_cycle':
             # One Cycle LR - 适用于训练轮数较少的场景

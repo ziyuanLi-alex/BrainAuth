@@ -29,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('BrainAuth')
 
-def train_one_epoch(model, dataloader, criterion, optimizer, device):
+def train_one_epoch(model, dataloader, criterion, optimizer, device, is_contrastive=False):
     """
     训练一个epoch
     
@@ -39,6 +39,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
         criterion: 损失函数
         optimizer: 优化器
         device: 设备
+        is_contrastive: 是否使用对比损失
         
     返回:
         avg_loss: 平均损失
@@ -56,7 +57,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
     pbar = tqdm(dataloader, desc="Training")
 
     for eeg1, eeg2, labels in pbar:
-         # 将数据移动到设备上
+        # 将数据移动到设备上
         eeg1, eeg2 = eeg1.to(device), eeg2.to(device)
         labels = labels.to(device)
         
@@ -64,25 +65,71 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
         optimizer.zero_grad()
         
         try:
-            # 前向传播
-            outputs = model(eeg1, eeg2)
+            if is_contrastive:
+                # 获取批次大小
+                batch_size = eeg1.size(0)
+                
+                # 对于对比损失，我们需要特征嵌入而不是相似度得分
+                feat1 = model.get_embedding(eeg1)
+                feat2 = model.get_embedding(eeg2)
+                
+                # 为pytorch_metric_learning处理输入:
+                # 1. 将所有嵌入合并到一个批次中
+                # 将两个批次的特征连接在一起：[batch_size*2, embedding_dim]
+                combined_embeddings = torch.cat([feat1, feat2], dim=0)
+                
+                # 2. 创建标签，使得：
+                # - 如果原始标签是1（相同身份），则两个特征的新标签相同
+                # - 如果原始标签是0（不同身份），则两个特征的新标签不同
+                # 方法：对于每对样本，第一个样本标为0,1,2...(batch_size-1)
+                # 第二个样本：如果标签是1，则使用相同数字；如果是0，则使用batch_size+i
+                labels1 = torch.arange(batch_size, device=device)
+                labels2 = torch.clone(labels1)
+                
+                # 对于标签为0的情况（不同身份），分配新的类别ID
+                different_mask = (labels == 0)
+                labels2[different_mask] = labels1[different_mask] + batch_size
+                
+                # 合并两批标签
+                combined_labels = torch.cat([labels1, labels2], dim=0)
+                
+                # 使用pytorch_metric_learning的ContrastiveLoss
+                loss = criterion(combined_embeddings, combined_labels)
+                
+                # 计算距离用于评估
+                # 我们使用欧氏距离来评估对中的相似度
+                dist = torch.nn.functional.pairwise_distance(feat1, feat2)
+                margin = 1.0  # 阈值，可根据需要调整
+                
+                # 用于评估指标的分数和预测
+                # 距离越小，越可能是同一类
+                scores = 1.0 - dist.detach().cpu().numpy() / margin
+                predictions = (dist.detach().cpu().numpy() < margin/2).astype(int)
+            else:
+                # 前向传播
+                outputs = model(eeg1, eeg2)
+                
+                # 计算损失
+                if isinstance(criterion, nn.BCELoss) or isinstance(criterion, nn.BCEWithLogitsLoss):
+                    # 对于二元分类，需要调整标签和输出形状
+                    loss = criterion(outputs.view(-1), labels.float())
+                    scores = outputs.view(-1).detach().cpu().numpy()
+                    predictions = (scores > 0.5).astype(int)
+                else:
+                    # 对于交叉熵损失
+                    loss = criterion(outputs, labels)
+                    scores = torch.softmax(outputs, dim=1)[:, 1].detach().cpu().numpy()
+                    predictions = torch.argmax(outputs, dim=1).detach().cpu().numpy()
         except Exception as e:
             logger.error(f"前向传播发生错误: {e}")
             logger.error(f"eeg1 shape: {eeg1.shape}")
             logger.error(f"eeg2 shape: {eeg2.shape}")
+            if is_contrastive:
+                logger.error(f"feat1 shape: {feat1.shape}")
+                logger.error(f"labels shape: {labels.shape}")
+                logger.error(f"combined_embeddings shape: {combined_embeddings.shape}")
+                logger.error(f"combined_labels shape: {combined_labels.shape}")
             raise e
-        
-        # 计算损失
-        if isinstance(criterion, nn.BCELoss) or isinstance(criterion, nn.BCEWithLogitsLoss):
-            # 对于二元分类，需要调整标签和输出形状
-            loss = criterion(outputs.view(-1), labels.float())
-            scores = outputs.view(-1).detach().cpu().numpy()
-            predictions = (scores > 0.5).astype(int)
-        else:
-            # 对于交叉熵损失
-            loss = criterion(outputs, labels)
-            scores = torch.softmax(outputs, dim=1)[:, 1].detach().cpu().numpy()
-            predictions = torch.argmax(outputs, dim=1).detach().cpu().numpy()
         
         # 反向传播和优化
         loss.backward()
@@ -101,7 +148,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, device):
 
     return avg_loss, np.array(all_targets), np.array(all_predictions), np.array(all_scores)
 
-def validate(model, dataloader, criterion, device):
+def validate(model, dataloader, criterion, device, is_contrastive=False):
     """
     验证模型性能
     
@@ -110,6 +157,7 @@ def validate(model, dataloader, criterion, device):
         dataloader: 数据加载器
         criterion: 损失函数
         device: 设备
+        is_contrastive: 是否使用对比损失
         
     返回:
         avg_loss: 平均损失
@@ -127,19 +175,42 @@ def validate(model, dataloader, criterion, device):
             # 将数据移动到设备上
             eeg1, eeg2 = eeg1.to(device), eeg2.to(device)
             labels = labels.to(device)
-
-            # 前向传播
-            outputs = model(eeg1, eeg2)
-
-            # 计算损失
-            if isinstance(criterion, nn.BCELoss) or isinstance(criterion, nn.BCEWithLogitsLoss):
-                loss = criterion(outputs.view(-1), labels.float())
-                scores = outputs.view(-1).detach().cpu().numpy()
-                predictions = (scores > 0.5).astype(int)
+            
+            if is_contrastive:
+                # 与训练阶段相同的处理
+                batch_size = eeg1.size(0)
+                feat1 = model.get_embedding(eeg1)
+                feat2 = model.get_embedding(eeg2)
+                
+                # 处理标签：与训练阶段相同
+                combined_embeddings = torch.cat([feat1, feat2], dim=0)
+                labels1 = torch.arange(batch_size, device=device)
+                labels2 = torch.clone(labels1)
+                different_mask = (labels == 0)
+                labels2[different_mask] = labels1[different_mask] + batch_size
+                combined_labels = torch.cat([labels1, labels2], dim=0)
+                
+                # 计算损失
+                loss = criterion(combined_embeddings, combined_labels)
+                
+                # 计算距离和相似度分数
+                dist = torch.nn.functional.pairwise_distance(feat1, feat2)
+                margin = 1.0
+                scores = 1.0 - dist.detach().cpu().numpy() / margin
+                predictions = (dist.detach().cpu().numpy() < margin/2).astype(int)
             else:
-                loss = criterion(outputs, labels)
-                scores = torch.softmax(outputs, dim=1)[:, 1].detach().cpu().numpy()
-                predictions = torch.argmax(outputs, dim=1).detach().cpu().numpy()
+                # 前向传播
+                outputs = model(eeg1, eeg2)
+
+                # 计算损失
+                if isinstance(criterion, nn.BCELoss) or isinstance(criterion, nn.BCEWithLogitsLoss):
+                    loss = criterion(outputs.view(-1), labels.float())
+                    scores = outputs.view(-1).detach().cpu().numpy()
+                    predictions = (scores > 0.5).astype(int)
+                else:
+                    loss = criterion(outputs, labels)
+                    scores = torch.softmax(outputs, dim=1)[:, 1].detach().cpu().numpy()
+                    predictions = torch.argmax(outputs, dim=1).detach().cpu().numpy()
             
             # 更新统计信息
             running_loss += loss.item() * labels.size(0)
@@ -156,6 +227,7 @@ def validate(model, dataloader, criterion, device):
     )
 
     return avg_loss, metrics
+
 
 def train_model(config_path):
     """
@@ -240,6 +312,9 @@ def train_model(config_path):
     loss_name = train_config['loss_function']
     logger.info(f"使用损失函数: {loss_name}")
     
+    # 判断是否使用对比损失
+    is_contrastive = False
+    
     if loss_name == 'cross_entropy':
         criterion = nn.CrossEntropyLoss()
     elif loss_name == 'bce':
@@ -249,11 +324,22 @@ def train_model(config_path):
         criterion = FocalLoss()
     elif loss_name == 'contrastive':
         from pytorch_metric_learning.losses import ContrastiveLoss
-        criterion = ContrastiveLoss()
+        # 对比损失的参数
+        pos_margin = train_config.get('contrastive_pos_margin', 0.0)  # 正例的边界，通常为0
+        neg_margin = train_config.get('contrastive_neg_margin', 1.0)  # 负例的边界
+        
+        logger.info(f"使用对比损失，pos_margin: {pos_margin}, neg_margin: {neg_margin}")
+        criterion = ContrastiveLoss(pos_margin=pos_margin, neg_margin=neg_margin)
+        is_contrastive = True
     else:
         raise ValueError(f"不支持的损失函数: {loss_name}")
 
-
+    # 检查模型是否支持对比损失
+    if is_contrastive and not hasattr(model, 'get_embedding'):
+        logger.error(f"模型 {model_config['name']} 不支持对比损失，需要实现get_embedding方法")
+        raise ValueError(f"模型 {model_config['name']} 不支持对比损失")
+    elif is_contrastive:
+        logger.info(f"模型 {model_config['name']} 支持对比损失，使用get_embedding方法")
     # 定义优化器
     optimizer = optim.Adam(
         model.parameters(),
@@ -308,14 +394,14 @@ def train_model(config_path):
         
         # 训练一个epoch
         train_loss, train_targets, train_preds, train_scores = train_one_epoch(
-            model, train_loader, criterion, optimizer, device
+            model, train_loader, criterion, optimizer, device, is_contrastive
         )
         
         # 计算训练指标
         train_metrics = calculate_metrics(train_targets, train_preds, train_scores)
         
         # 验证
-        val_loss, val_metrics = validate(model, val_loader, criterion, device)
+        val_loss, val_metrics = validate(model, val_loader, criterion, device, is_contrastive)
         
         # 打印指标
         logger.info(f"训练 - 损失: {train_loss:.4f}, 准确率: {train_metrics['accuracy']:.4f}, F1: {train_metrics['f1']:.4f}")
@@ -328,7 +414,8 @@ def train_model(config_path):
             else:
                 scheduler.step()
 
-        # 保存模型# 记录指标历史
+        # 保存模型
+        # 记录指标历史
         metrics_history['train_loss'].append(train_loss)
         metrics_history['val_loss'].append(val_loss)
         metrics_history['train_accuracy'].append(train_metrics['accuracy'])
@@ -395,7 +482,7 @@ def train_model(config_path):
     
     # 在测试集上评估
     logger.info("在测试集上评估模型...")
-    test_loss, test_metrics = validate(model, test_loader, criterion, device)
+    test_loss, test_metrics = validate(model, test_loader, criterion, device, is_contrastive)
     
     logger.info(f"测试集性能：")
     logger.info(f"损失: {test_loss:.4f}")
