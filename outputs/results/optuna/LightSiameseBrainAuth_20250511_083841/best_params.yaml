@@ -1,0 +1,15 @@
+contrastive_neg_margin: 1.2638559283140842
+contrastive_pos_margin: 0.3463897826330212
+conv1_channels: 12
+conv2_channels: 28
+conv3_channels: 48
+conv6_channels: 32
+dropout_rate: 0.2837903060074618
+hidden_size: 128
+learning_rate: 0.000900612367364734
+loss_function: contrastive
+lr_scheduler: one_cycle
+momentum: 0.9777970812578666
+optimizer: sgd
+use_batch_norm: false
+weight_decay: 2.5212510633126466e-06

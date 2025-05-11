@@ -36,10 +36,10 @@ model:
 
 # 训练配置
 train:
-  epochs: 50  # 3D CNN需要更多epochs收敛
-  learning_rate: 0.005  # 比常规CNN更小的学习率
+  epochs: 10  # 3D CNN需要更多epochs收敛
+  learning_rate: 0.0009  # 比常规CNN更小的学习率
   weight_decay: 0.0001  # 适度的权重衰减
-  lr_scheduler: "cosine"  # 余弦退火适合3D CNN
+  lr_scheduler: "one_cycle"  
   lr_scheduler_params:
     step_size: 10
     gamma: 0.1
@@ -51,7 +51,7 @@ train:
 # 验证配置
 evaluation:
   metrics: ["accuracy", "precision", "recall", "f1", "auc", "eer"]
-  best_metric: "f1"  # F1分数对不平衡数据更鲁棒
+  best_metric: "accuracy"  # F1分数对不平衡数据更鲁棒
   subject_split: 
     train: 0.7
     val: 0.15

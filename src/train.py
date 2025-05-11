@@ -341,9 +341,15 @@ def train_model(config_path):
     elif is_contrastive:
         logger.info(f"模型 {model_config['name']} 支持对比损失，使用get_embedding方法")
     # 定义优化器
-    optimizer = optim.Adam(
+    # optimizer = optim.Adam(
+    #     model.parameters(),
+    #     lr=train_config['learning_rate'],
+    #     weight_decay=train_config['weight_decay']
+    # )
+    optimizer = optim.SGD(
         model.parameters(),
         lr=train_config['learning_rate'],
+        momentum=0.97,
         weight_decay=train_config['weight_decay']
     )
     
@@ -369,6 +375,13 @@ def train_model(config_path):
             factor=scheduler_params['gamma'],
             patience=scheduler_params['patience'],
             verbose=True
+        )
+    elif scheduler_type == 'one_cycle':
+        scheduler = optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=train_config['learning_rate']*10,
+            steps_per_epoch=len(train_loader),
+            epochs=train_config['epochs']
         )
     else:
         scheduler = None

@@ -1,0 +1,94 @@
+data:
+  batch_size: 128
+  cache_data: true
+  condition: eyes_open
+  data_dir: ./data
+  hdf5_cache_dir: ./data/hdf_cache
+  num_workers: 1
+  pos_ratio: 0.5
+  preprocess_params:
+    channels: null
+    freq_bands:
+    - - 8.0
+      - 10.2
+    - - 10.2
+      - 12.4
+    - - 12.4
+      - 14.6
+    - - 14.6
+      - 16.8
+    - - 16.8
+      - 19.0
+    - - 19.0
+      - 21.2
+    - - 21.2
+      - 23.4
+    - - 23.4
+      - 25.6
+    - - 25.6
+      - 27.8
+    - - 27.8
+      - 30.0
+    h_freq: 40.0
+    l_freq: 1.0
+    mapping_method: cubic
+    normalize: true
+    overlap: 0.5
+    preprocess_cache: true
+    resample: 160.0
+    segment_duration: 2.0
+    use_log: true
+  reset_cache: false
+  use_hdf5_cache: true
+evaluation:
+  best_metric: f1
+  metrics:
+  - accuracy
+  - precision
+  - recall
+  - f1
+  - auc
+  - eer
+  monitor_subject_performance: true
+  subject_split:
+    test: 0.15
+    train: 0.7
+    val: 0.15
+logging:
+  log_tensor_shapes: false
+model:
+  conv_channels:
+  - 12
+  - 28
+  - 48
+  - 32
+  dropout_rate: 0.2837903060074618
+  hidden_size: 128
+  input_shape:
+  - 110
+  - 100
+  - 10
+  name: LightSiameseBrainAuth
+  num_classes: 2
+  pretrained: null
+  use_batch_norm: false
+output:
+  checkpoint_dir: ./outputs/checkpoints
+  log_dir: ./outputs/logs
+  results_dir: ./outputs/results
+  save_best_only: true
+  save_frequency: 3
+seed: 42
+train:
+  early_stopping: true
+  early_stopping_patience: 15
+  epochs: 50
+  learning_rate: 0.000900612367364734
+  loss_function: contrastive
+  lr_scheduler: one_cycle
+  lr_scheduler_params:
+    max_lr: 0.00900612367364734
+    pct_start: 0.3
+  momentum: 0.9777970812578666
+  optimizer: sgd
+  weight_decay: 2.5212510633126466e-06

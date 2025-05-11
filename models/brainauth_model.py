@@ -378,7 +378,7 @@ class LightSiameseBrainAuth(nn.Module):
     def __init__(self, input_shape: Tuple[int, int, int] = (110, 100, 10), 
                 conv_channels: Optional[List[int]] = None,
                 hidden_size: int = 128,
-                dropout_rate: float = 0.3,
+                dropout_rate: float = 0.28,
                 use_batch_norm: bool = True):
         """初始化模型
         
@@ -393,7 +393,7 @@ class LightSiameseBrainAuth(nn.Module):
         
         # 如果没有指定卷积通道数，使用默认值
         if conv_channels is None or len(conv_channels) < 4:
-            conv_channels = [8, 16, 32, 64]
+            conv_channels = [12, 28, 48, 32]
         
         self.dropout_rate = dropout_rate
         self.use_batch_norm = use_batch_norm
