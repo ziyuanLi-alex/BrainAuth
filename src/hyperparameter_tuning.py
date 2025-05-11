@@ -284,20 +284,17 @@ class OptunaOptimizer:
                 logger.warning("未安装pytorch_toolbelt，改用BCEWithLogitsLoss")
                 return torch.nn.BCEWithLogitsLoss()
         elif loss_name == 'contrastive':
-            try:
-                from pytorch_metric_learning.losses import ContrastiveLoss
-                # 调整ContrastiveLoss的margin参数
-                margin = trial.suggest_float(
-                    'contrastive_margin',
-                    self.optuna_config['params']['contrastive_margin']['min'],
-                    self.optuna_config['params']['contrastive_margin']['max']
-                )
-                return ContrastiveLoss(margin=margin)
-            except ImportError:
-                logger.warning("未安装pytorch_metric_learning，改用BCEWithLogitsLoss")
-                return torch.nn.BCEWithLogitsLoss()
+            # 使用正确的参数名称：pos_margin和neg_margin，而不是margin
+            # 正样本边界通常设为0或接近0的值
+            pos_margin = trial.suggest_float('contrastive_pos_margin', 0.0, self.optuna_config['params']['contrastive_margin']['min'])
+            # 负样本边界通常设为大于0的值，表示不同类之间的最小距离
+            neg_margin = trial.suggest_float('contrastive_neg_margin', 0.5, self.optuna_config['params']['contrastive_margin']['max'])
+            
+            from pytorch_metric_learning.losses import ContrastiveLoss
+            logger.info(f"使用对比损失: pos_margin={pos_margin}, neg_margin={neg_margin}")
+            return ContrastiveLoss(pos_margin=pos_margin, neg_margin=neg_margin)
         else:
-            return torch.nn.BCEWithLogitsLoss()  # 默认回退选项
+            raise ValueError(f"不支持的损失函数: {loss_name}")
     
     def _create_scheduler(self, trial: optuna.Trial, optimizer: torch.optim.Optimizer, 
                         num_epochs: int) -> torch.optim.lr_scheduler._LRScheduler:
@@ -374,13 +371,22 @@ class OptunaOptimizer:
         # 创建损失函数
         criterion = self._create_loss_function(trial)
         
+        # 判断是否使用对比损失
+        from pytorch_metric_learning.losses import ContrastiveLoss
+        is_contrastive = isinstance(criterion, ContrastiveLoss)
+        
+        # 如果使用对比损失，检查模型是否实现了get_embedding方法
+        if is_contrastive and not hasattr(model, 'get_embedding'):
+            logger.error(f"模型 {self.model_name} 不支持对比损失，需要实现get_embedding方法")
+            raise ValueError(f"模型 {self.model_name} 不支持对比损失")
+        
         # 创建优化器
         optimizer = self._create_optimizer(trial, model)
         
         # 获取超参数
         epochs = self.optuna_config.get('epochs', self.config['train']['epochs'])
         patience = self.optuna_config.get('early_stopping_patience', 
-                                          self.config['train']['early_stopping_patience'])
+                                        self.config['train']['early_stopping_patience'])
         
         # 创建调度器
         scheduler = self._create_scheduler(trial, optimizer, epochs)
@@ -408,6 +414,9 @@ class OptunaOptimizer:
                 train_loss = 0.0
                 train_correct = 0
                 train_total = 0
+                all_train_preds = []
+                all_train_labels = []
+                all_train_scores = []
                 
                 for eeg1, eeg2, labels in train_loader:
                     eeg1, eeg2 = eeg1.to(self.device), eeg2.to(self.device)
@@ -415,26 +424,77 @@ class OptunaOptimizer:
                     
                     optimizer.zero_grad()
                     
-                    # 前向传播
-                    outputs = model(eeg1, eeg2)
-                    
-                    # 计算损失
-                    if isinstance(criterion, torch.nn.BCELoss) or isinstance(criterion, torch.nn.BCEWithLogitsLoss):
-                        loss = criterion(outputs.view(-1), labels.float())
-                        preds = (torch.sigmoid(outputs.view(-1)) > 0.5).int()
+                    # 根据是否使用对比损失选择不同的处理流程
+                    if is_contrastive:
+                        # 获取批次大小
+                        batch_size = eeg1.size(0)
+                        
+                        # 对于对比损失，我们需要特征嵌入而不是相似度得分
+                        feat1 = model.get_embedding(eeg1)
+                        feat2 = model.get_embedding(eeg2)
+                        
+                        # 为pytorch_metric_learning处理输入:
+                        # 1. 将所有嵌入合并到一个批次中
+                        # 将两个批次的特征连接在一起：[batch_size*2, embedding_dim]
+                        combined_embeddings = torch.cat([feat1, feat2], dim=0)
+                        
+                        # 2. 创建标签，使得：
+                        # - 如果原始标签是1（相同身份），则两个特征的新标签相同
+                        # - 如果原始标签是0（不同身份），则两个特征的新标签不同
+                        # 方法：对于每对样本，第一个样本标为0,1,2...(batch_size-1)
+                        # 第二个样本：如果标签是1，则使用相同数字；如果是0，则使用batch_size+i
+                        labels1 = torch.arange(batch_size, device=self.device)
+                        labels2 = torch.clone(labels1)
+                        
+                        # 对于标签为0的情况（不同身份），分配新的类别ID
+                        different_mask = (labels == 0)
+                        labels2[different_mask] = labels1[different_mask] + batch_size
+                        
+                        # 合并两批标签
+                        combined_labels = torch.cat([labels1, labels2], dim=0)
+                        
+                        # 使用pytorch_metric_learning的ContrastiveLoss
+                        loss = criterion(combined_embeddings, combined_labels)
+                        
+                        # 计算距离用于评估
+                        # 我们使用欧氏距离来评估对中的相似度
+                        dist = torch.nn.functional.pairwise_distance(feat1, feat2)
+                        margin = 1.0  # 阈值，可根据需要调整
+                        
+                        # 用于评估指标的分数和预测
+                        # 距离越小，越可能是同一类
+                        scores = 1.0 - dist.detach().cpu().numpy() / margin
+                        preds = (dist.detach().cpu().numpy() < margin/2).astype(int)
                     else:
-                        loss = criterion(outputs, labels)
-                        preds = torch.argmax(outputs, dim=1)
-                    
-                    # 统计正确预测数
-                    train_correct += (preds == labels).sum().item()
-                    train_total += labels.size(0)
+                        # 前向传播
+                        outputs = model(eeg1, eeg2)
+                        
+                        # 计算损失
+                        if isinstance(criterion, torch.nn.BCELoss) or isinstance(criterion, torch.nn.BCEWithLogitsLoss):
+                            loss = criterion(outputs.view(-1), labels.float())
+                            scores = torch.sigmoid(outputs.view(-1)).detach().cpu().numpy()
+                            preds = (scores > 0.5).astype(int)
+                        else:
+                            loss = criterion(outputs, labels)
+                            scores = torch.softmax(outputs, dim=1)[:, 1].detach().cpu().numpy()
+                            preds = torch.argmax(outputs, dim=1).detach().cpu().numpy()
                     
                     # 反向传播和优化
                     loss.backward()
                     optimizer.step()
                     
+                    # 更新统计信息
                     train_loss += loss.item() * labels.size(0)
+                    if is_contrastive:
+                        train_correct += (preds == labels.cpu().numpy()).sum()
+                    else:
+                        train_correct += (preds == labels.cpu().numpy()).sum()
+                    train_total += labels.size(0)
+                    
+                    # 收集预测和标签
+                    all_train_preds.extend(preds)
+                    all_train_labels.extend(labels.cpu().numpy())
+                    all_train_scores.extend(scores)
                 
                 train_loss /= len(train_loader.dataset)
                 train_acc = train_correct / train_total
@@ -453,29 +513,66 @@ class OptunaOptimizer:
                         eeg1, eeg2 = eeg1.to(self.device), eeg2.to(self.device)
                         labels = labels.to(self.device)
                         
-                        # 前向传播
-                        outputs = model(eeg1, eeg2)
-                        
-                        # 计算损失
-                        if isinstance(criterion, torch.nn.BCELoss) or isinstance(criterion, torch.nn.BCEWithLogitsLoss):
-                            loss = criterion(outputs.view(-1), labels.float())
-                            scores = torch.sigmoid(outputs.view(-1))
-                            preds = (scores > 0.5).int()
+                        # 根据是否使用对比损失选择不同的处理流程
+                        if is_contrastive:
+                            # 获取批次大小
+                            batch_size = eeg1.size(0)
+                            
+                            # 对于对比损失，我们需要特征嵌入而不是相似度得分
+                            feat1 = model.get_embedding(eeg1)
+                            feat2 = model.get_embedding(eeg2)
+                            
+                            # 为pytorch_metric_learning处理输入:
+                            # 1. 将所有嵌入合并到一个批次中
+                            combined_embeddings = torch.cat([feat1, feat2], dim=0)
+                            
+                            # 2. 创建标签，使得对应的样本对具有相同或不同的标签
+                            labels1 = torch.arange(batch_size, device=self.device)
+                            labels2 = torch.clone(labels1)
+                            
+                            # 对于标签为0的情况（不同身份），分配新的类别ID
+                            different_mask = (labels == 0)
+                            labels2[different_mask] = labels1[different_mask] + batch_size
+                            
+                            # 合并两批标签
+                            combined_labels = torch.cat([labels1, labels2], dim=0)
+                            
+                            # 使用pytorch_metric_learning的ContrastiveLoss
+                            loss = criterion(combined_embeddings, combined_labels)
+                            
+                            # 计算距离用于评估
+                            dist = torch.nn.functional.pairwise_distance(feat1, feat2)
+                            margin = 1.0  # 阈值，可根据需要调整
+                            
+                            # 用于评估指标的分数和预测
+                            scores = 1.0 - dist.detach().cpu().numpy() / margin
+                            preds = (dist.detach().cpu().numpy() < margin/2).astype(int)
                         else:
-                            loss = criterion(outputs, labels)
-                            scores = torch.softmax(outputs, dim=1)[:, 1]
-                            preds = torch.argmax(outputs, dim=1)
+                            # 前向传播
+                            outputs = model(eeg1, eeg2)
+                            
+                            # 计算损失
+                            if isinstance(criterion, torch.nn.BCELoss) or isinstance(criterion, torch.nn.BCEWithLogitsLoss):
+                                loss = criterion(outputs.view(-1), labels.float())
+                                scores = torch.sigmoid(outputs.view(-1)).detach().cpu().numpy()
+                                preds = (scores > 0.5).astype(int)
+                            else:
+                                loss = criterion(outputs, labels)
+                                scores = torch.softmax(outputs, dim=1)[:, 1].detach().cpu().numpy()
+                                preds = torch.argmax(outputs, dim=1).detach().cpu().numpy()
                         
-                        # 统计正确预测数
-                        val_correct += (preds == labels).sum().item()
+                        # 更新统计信息
+                        val_loss += loss.item() * labels.size(0)
+                        if is_contrastive:
+                            val_correct += (preds == labels.cpu().numpy()).sum()
+                        else:
+                            val_correct += (preds == labels.cpu().numpy()).sum()
                         val_total += labels.size(0)
                         
-                        val_loss += loss.item() * labels.size(0)
-                        
                         # 收集预测和标签
-                        all_preds.extend(preds.cpu().numpy())
+                        all_preds.extend(preds)
                         all_labels.extend(labels.cpu().numpy())
-                        all_scores.extend(scores.cpu().numpy())
+                        all_scores.extend(scores)
                 
                 val_loss /= len(val_loader.dataset)
                 val_acc = val_correct / val_total
@@ -487,6 +584,13 @@ class OptunaOptimizer:
                     y_score=np.array(all_scores)
                 )
                 
+                # 计算训练指标(同样使用calculate_metrics确保一致性)
+                train_metrics = calculate_metrics(
+                    y_true=np.array(all_train_labels),
+                    y_pred=np.array(all_train_preds),
+                    y_score=np.array(all_train_scores)
+                )
+                
                 # 更新学习率
                 if scheduler is not None:
                     if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -495,8 +599,8 @@ class OptunaOptimizer:
                         scheduler.step()
                 
                 # 记录结果
-                logger.info(f"训练 - 损失: {train_loss:.4f}, 准确率: {train_acc:.4f}")
-                logger.info(f"验证 - 损失: {val_loss:.4f}, 准确率: {val_acc:.4f}, F1: {val_metrics['f1']:.4f}")
+                logger.info(f"训练 - 损失: {train_loss:.4f}, 准确率: {train_metrics['accuracy']:.4f}, F1: {train_metrics['f1']:.4f}")
+                logger.info(f"验证 - 损失: {val_loss:.4f}, 准确率: {val_metrics['accuracy']:.4f}, F1: {val_metrics['f1']:.4f}")
                 
                 # 检查是否是最佳模型
                 current_score = val_metrics[self.metric_name]
@@ -728,8 +832,9 @@ class OptunaOptimizer:
         # 损失函数相关参数
         if train_config['loss_function'] == 'focal' and 'focal_gamma' in best_params:
             train_config['focal_gamma'] = best_params['focal_gamma']
-        elif train_config['loss_function'] == 'contrastive' and 'contrastive_margin' in best_params:
-            train_config['contrastive_margin'] = best_params['contrastive_margin']
+        elif train_config['loss_function'] == 'contrastive':
+            if 'contrastive_margin' in best_params:
+                train_config['contrastive_margin'] = best_params['contrastive_margin']
         
         # 学习率调度器
         train_config['lr_scheduler'] = best_params.get('lr_scheduler', train_config['lr_scheduler'])

@@ -65,7 +65,7 @@ params:
   
   # 损失函数选择
   loss_function:       # 损失函数类型
-    choices: ["bce", "focal"]
+    choices: ["contrastive"]
   
   # Focal Loss参数 (仅当loss_function为'focal'时使用)
   focal_gamma:         # Focal Loss的gamma参数
