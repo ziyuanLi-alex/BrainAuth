@@ -20,7 +20,7 @@ evaluation:
   output_dir: results
   plot_results: true
 experiment:
-  include_eyes_closed: false
+  include_eyes_closed: true
   include_eyes_open: true
 model:
   conv_filters:
@@ -55,7 +55,7 @@ preprocessing:
     freq: 128
 training:
   early_stopping: true
-  epochs: 80
+  epochs: 20
   learning_rate: 0.009795624180611199
   optimizer: sgd
   patience: 15

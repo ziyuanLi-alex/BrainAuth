@@ -8,3 +8,4 @@ data/*
 *.db
 *.pt
 models/*
+outputs/results/optuna/*

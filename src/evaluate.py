@@ -421,7 +421,7 @@ def main():
         print(f"Created SiameseICAConvNet")
     
     # Load model weights
-    checkpoint = torch.load(model_path, map_location=device)
+    checkpoint = torch.load(model_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
     print(f"Loaded model weights from {model_path}")
     print(f"Model was trained for {checkpoint['epoch']} epochs")

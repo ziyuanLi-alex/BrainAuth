@@ -20,47 +20,47 @@ evaluation:
   output_dir: results
   plot_results: true
 experiment:
-  include_eyes_closed: false
+  include_eyes_closed: true
   include_eyes_open: true
 model:
   conv_filters:
-  - 32
-  - 32
-  - 32
-  dropout_rate: 0.49034709340476745
-  fc_dim: 128
-  ica_components: 64
+  - 64
+  - 64
+  - 64
+  dropout_rate: 0.515441850788573
+  fc_dim: 256
+  ica_components: 32
   kernel_sizes:
-  - - 3
-    - 3
+  - - 5
+    - 5
   - - 3
     - 3
   - - 3
     - 3
   siamese:
-    embedding_dim: 128
-    hidden_dim: 64
+    embedding_dim: 256
+    hidden_dim: 256
     margin: 1.0
 preprocessing:
   channels:
     select: true
     set: epoc_x
   filter:
-    apply: true
-    highcut: 45.628703647922414
-    lowcut: 3.1503817781769023
+    apply: false
+    highcut: 50.0
+    lowcut: 1.0
   normalize: true
   resample:
     apply: false
     freq: 128
 training:
   early_stopping: true
-  epochs: 80
-  learning_rate: 0.009795624180611199
+  epochs: 100
+  learning_rate: 0.00020384414045682633
   optimizer: sgd
   patience: 15
   use_gpu: true
-  weight_decay: 0.0002338650916737274
+  weight_decay: 0.0004725619649464217
 windowing:
   window_length: 0.5
   window_stride: 0.5

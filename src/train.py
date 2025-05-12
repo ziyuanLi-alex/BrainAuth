@@ -543,14 +543,14 @@ def train(config_path='configs/config.yaml'):
         # Check if this is the best model
         improved = False
         
-        if mode == 'identity' or not use_contrastive:
+        if mode == 'identity':
             # For identity or standard siamese, use accuracy
             if val_metrics['accuracy'] > best_val_acc:
                 best_val_acc = val_metrics['accuracy']
                 best_epoch = epoch
                 improved = True
         else:
-            # For contrastive siamese, use EER (lower is better)
+            # For siamese, use EER (lower is better)
             if val_metrics['eer'] < best_val_eer:
                 best_val_eer = val_metrics['eer']
                 best_epoch = epoch
@@ -585,6 +585,10 @@ def train(config_path='configs/config.yaml'):
             )
         else:
             epochs_no_improve += 1
+            logger.info(f"No improvement for {epochs_no_improve}/{patience} epochs")
+            # logger.info(f"Best model was at epoch {best_epoch+1}")
+            # logger.info(f"Best validation accuracy: {best_val_acc:.2f}% (epoch {best_epoch+1})")
+            logger.info(f"Best validation EER: {best_val_eer:.4f} (epoch {best_epoch+1})")
             
         # Early stopping
         if early_stopping and epochs_no_improve >= patience:
@@ -594,7 +598,7 @@ def train(config_path='configs/config.yaml'):
     
     # Training finished
     logger.info("\n=== Training Completed ===")
-    if mode == 'identity' or not use_contrastive:
+    if mode == 'identity':
         logger.info(f"Best validation accuracy: {best_val_acc:.2f}% (epoch {best_epoch+1})")
     else:
         logger.info(f"Best validation EER: {best_val_eer:.4f} (epoch {best_epoch+1})")
