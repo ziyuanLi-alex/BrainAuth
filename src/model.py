@@ -231,6 +231,127 @@ class SiameseICAConvNet(nn.Module):
         return similarity
 
 
+class ImprovedICAConvNet(ICAConvNet):
+    """Enhanced ICAConvNet with residual connections and additional non-linearities"""
+    
+    def __init__(self, num_channels=14, num_samples=80, num_classes=109, config_path='configs/config.yaml'):
+        super(ImprovedICAConvNet, self).__init__(num_channels, num_samples, num_classes, config_path)
+        
+        # Add batch normalization layers
+        self.bn1 = nn.BatchNorm2d(self.conv1.out_channels)
+        self.bn2 = nn.BatchNorm2d(self.conv2.out_channels)
+        self.bn3 = nn.BatchNorm2d(self.conv3.out_channels)
+        
+        # Add skip connection for residual learning
+        self.skip_conv = nn.Conv2d(1, self.conv3.out_channels, kernel_size=1, stride=(4, 2))
+        
+    def forward(self, x):
+        batch_size, channels, samples = x.size()
+        
+        # Apply ICA transform
+        x = x.permute(0, 2, 1)  # [batch_size, samples, channels]
+        x = self.ica(x)  # [batch_size, samples, ica_components]
+        x = x.permute(0, 2, 1)  # [batch_size, ica_components, samples]
+        
+        # Add channel dimension for 2D convolution
+        x = x.unsqueeze(1)  # [batch_size, 1, ica_components, samples]
+        
+        # Save input for skip connection
+        skip = x
+        
+        # Apply convolutional features with BN and ELU activation
+        x = F.elu(self.bn1(self.conv1(x)))
+        x = self.pool1(x)
+        
+        x = F.elu(self.bn2(self.conv2(x)))
+        x = self.pool2(x)
+        
+        x = F.elu(self.bn3(self.conv3(x)))
+        
+        # Apply skip connection
+        skip = self.skip_conv(skip)
+        x = x + skip
+        
+        x = self.pool3(x)
+        
+        # Flatten
+        x = torch.flatten(x, 1)
+        
+        # Fully connected layers
+        x = F.elu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        
+        return F.log_softmax(x, dim=1)
+
+class ImprovedSiameseNet(nn.Module):
+    """Enhanced Siamese network with attention mechanism"""
+    
+    def __init__(self, num_channels=14, num_samples=80, config_path='configs/config.yaml'):
+        super(ImprovedSiameseNet, self).__init__()
+        
+        config = load_config(config_path)
+        model_config = config['model']
+        siamese_config = model_config['siamese']
+        
+        embedding_dim = siamese_config.get('embedding_dim', model_config['fc_dim'])
+        hidden_dim = siamese_config.get('hidden_dim', embedding_dim // 2)
+        dropout_rate = model_config['dropout_rate']
+        
+        # Use improved base network
+        self.base_network = ImprovedICAConvNet(
+            num_channels=num_channels, 
+            num_samples=num_samples, 
+            num_classes=embedding_dim,
+            config_path=config_path
+        )
+        
+        # Self-attention for embedding refinement
+        self.attention = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim // 4),
+            nn.Tanh(),
+            nn.Linear(embedding_dim // 4, 1)
+        )
+        
+        # Similarity network with more layers
+        self.fc_out = nn.Sequential(
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ELU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.BatchNorm1d(hidden_dim // 2),
+            nn.ELU(),
+            nn.Dropout(dropout_rate / 2),
+            nn.Linear(hidden_dim // 2, 1),
+            nn.Sigmoid()
+        )
+        
+    def forward_once(self, x):
+        """Get embedding with attention"""
+        embed = self.base_network.get_embedding(x)
+        
+        # Apply self-attention for feature refinement
+        att_weights = self.attention(embed)
+        att_weights = F.softmax(att_weights, dim=1)
+        attended_embed = embed * att_weights
+        
+        return attended_embed
+    
+    def forward(self, x1, x2):
+        embedding1 = self.forward_once(x1)
+        embedding2 = self.forward_once(x2)
+        
+        # Compute absolute difference between embeddings
+        diff = torch.abs(embedding1 - embedding2)
+        
+        # Compute similarity score
+        similarity = self.fc_out(diff)
+        
+        return similarity
+
+
+
 class ContrastiveSiameseNet(nn.Module):
     """
     Alternative Siamese network using contrastive loss.
@@ -291,6 +412,7 @@ class ContrastiveSiameseNet(nn.Module):
         return embedding1, embedding2, distance
 
 
+
 def contrastive_loss(distance, label, margin=1.0):
     """
     Contrastive loss function for siamese networks.
@@ -314,35 +436,26 @@ def contrastive_loss(distance, label, margin=1.0):
 def create_model(config_path='configs/config.yaml', num_channels=None, num_samples=None, num_classes=None):
     """
     Create a model based on configuration.
-    
-    Args:
-        config_path: Path to YAML config file
-        num_channels: Number of EEG channels (will be detected if None)
-        num_samples: Number of time samples (will be detected if None)
-        num_classes: Number of output classes for identity mode
-        
-    Returns:
-        Instantiated model
     """
-    # Load configuration
     config = load_config(config_path)
-    
-    # Determine model type
     mode = config['dataloader']['mode']
     use_contrastive = config['dataloader']['siamese'].get('use_contrastive', False)
-    
-    # Create model based on mode
+    improved = config['model'].get('improved', {}).get('enabled', False)
+
     if mode == 'identity':
         if num_classes is None:
             raise ValueError("num_classes must be specified for identity model")
-        return ICAConvNet(num_channels, num_samples, num_classes, config_path)
-    
+        if improved:
+            return ImprovedICAConvNet(num_channels, num_samples, num_classes, config_path)
+        else:
+            return ICAConvNet(num_channels, num_samples, num_classes, config_path)
     elif mode == 'siamese':
         if use_contrastive:
             return ContrastiveSiameseNet(num_channels, num_samples, config_path)
+        elif improved:
+            return ImprovedSiameseNet(num_channels, num_samples, config_path)
         else:
             return SiameseICAConvNet(num_channels, num_samples, config_path)
-    
     else:
         raise ValueError(f"Unknown model type: {mode}")
 

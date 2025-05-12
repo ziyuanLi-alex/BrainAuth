@@ -37,10 +37,28 @@ model:
     - 3
   - - 3
     - 3
+  # 添加改进模型所需的新参数
+  improved:
+    enabled: true  # 是否启用改进版模型
+    batch_norm: true  # 是否使用批归一化
+    residual: true  # 是否使用残差连接
+    skip_stride: [4, 2]  # 跳跃连接的步长
+  
   siamese:
     embedding_dim: 128
     hidden_dim: 64
     margin: 1.0
+
+    attention:
+      enabled: true  # 是否启用注意力机制
+      reduction_ratio: 4  # 注意力降维比例
+    
+    # 改进版相似度网络配置
+    similarity_network:
+      use_batch_norm: true  # 是否在相似度网络中使用批归一化
+      additional_layer: true  # 是否添加额外的中间层
+      dropout_reduction: 0.5  # 额外层的dropout降低系数
+    
 preprocessing:
   channels:
     select: true

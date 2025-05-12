@@ -23,6 +23,8 @@ import logging
 from datetime import datetime
 import sys
 from tqdm import tqdm
+import matplotlib
+matplotlib.use('Agg')
 
 # Import from existing modules
 from dataset import get_dataloaders, load_config
@@ -100,26 +102,14 @@ def create_trial_config(config, trial):
     """
     Create a configuration for a trial by updating the base config with 
     hyperparameters suggested by Optuna.
-    
-    Args:
-        config: Base configuration dictionary
-        trial: Optuna trial object
-        
-    Returns:
-        Updated configuration dictionary
     """
     # Create a deep copy to avoid modifying the original
     trial_config = copy.deepcopy(config)
     
     # Model hyperparameters
-    # Update ICA components (ensure it's divisible by 2)
     trial_config['model']['ica_components'] = trial.suggest_categorical('ica_components', [32, 64, 128])
-    
-    # Update convolutional filters
     num_filters = trial.suggest_categorical('num_filters', [16, 32, 64])
     trial_config['model']['conv_filters'] = [num_filters, num_filters, num_filters]
-    
-    # Update kernel sizes
     kernel_size_x = trial.suggest_categorical('kernel_size_x', [3, 5, 7])
     kernel_size_y = trial.suggest_categorical('kernel_size_y', [3, 5])
     trial_config['model']['kernel_sizes'] = [
@@ -127,47 +117,48 @@ def create_trial_config(config, trial):
         [3, 3], 
         [3, 3]
     ]
-    
-    # Update fully connected dimension
     fc_dim = trial.suggest_categorical('fc_dim', [128, 256, 512])
     trial_config['model']['fc_dim'] = fc_dim
-    
-    # Update dropout rate
     trial_config['model']['dropout_rate'] = trial.suggest_float('dropout_rate', 0.2, 0.6)
-    
+
+    # ==== 支持改进模型的超参数 ====
+    # improved_enabled = trial.suggest_categorical('improved_enabled', [True, False])
+    # trial_config['model']['improved']['enabled'] = improved_enabled
+    improved_enabled = trial_config['model']['improved']['enabled']
+    if improved_enabled:
+        trial_config['model']['improved']['batch_norm'] = trial.suggest_categorical('improved_batch_norm', [True, False])
+        trial_config['model']['improved']['residual'] = trial.suggest_categorical('improved_residual', [True, False])
+        trial_config['model']['improved']['skip_stride'] = [
+            trial.suggest_categorical('improved_skip_stride_0', [2, 4]),
+            trial.suggest_categorical('improved_skip_stride_1', [1, 2])
+        ]
+
     # Siamese specific parameters
     if trial_config['dataloader']['mode'] == 'siamese':
-        # IMPORTANT: Keep embedding dimension consistent with fc_dim to avoid shape mismatches
         trial_config['model']['siamese']['embedding_dim'] = fc_dim
-        
-        # Update hidden dimension
         trial_config['model']['siamese']['hidden_dim'] = trial.suggest_categorical('hidden_dim', [64, 128, 256])
-        
-        # Update margin for contrastive loss
         if trial_config['dataloader']['siamese']['use_contrastive']:
             trial_config['model']['siamese']['margin'] = trial.suggest_float('margin', 0.5, 2.0)
-    
+        # 支持改进版相似度网络
+        trial_config['model']['siamese']['similarity_network']['use_batch_norm'] = trial.suggest_categorical('simnet_batch_norm', [True, False])
+        trial_config['model']['siamese']['similarity_network']['additional_layer'] = trial.suggest_categorical('simnet_additional_layer', [True, False])
+        trial_config['model']['siamese']['similarity_network']['dropout_reduction'] = trial.suggest_float('simnet_dropout_reduction', 0.2, 0.8)
+        # 支持注意力机制
+        trial_config['model']['siamese']['attention']['enabled'] = trial.suggest_categorical('attention_enabled', [True, False])
+        trial_config['model']['siamese']['attention']['reduction_ratio'] = trial.suggest_categorical('attention_reduction_ratio', [2, 4, 8])
+
     # Training hyperparameters
     trial_config['training']['learning_rate'] = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
     trial_config['training']['weight_decay'] = trial.suggest_float('weight_decay', 1e-5, 1e-3, log=True)
     trial_config['training']['optimizer'] = trial.suggest_categorical('optimizer', ['adam', 'sgd'])
-    
-    # Limit epochs for tuning
-    trial_config['training']['epochs'] = min(trial_config['training']['epochs'], 20)
-    
-    # Data augmentation hyperparameters - be careful with window_length and stride
-    # as they affect the number of samples and potentially the dimensions
+    trial_config['training']['epochs'] = min(trial_config['training']['epochs'], 30)
     window_length = trial.suggest_categorical('window_length', [0.25, 0.5, 1.0])
     trial_config['windowing']['window_length'] = window_length
-    
-    # For window_stride, we must use fixed choices for all trials
-    # rather than dynamic based on window_length to avoid Optuna errors
     window_stride = trial.suggest_categorical('window_stride', [0.125, 0.25, 0.5])
-    # Ensure stride is not larger than window_length to avoid invalid configurations
     if window_stride > window_length:
         window_stride = window_length
     trial_config['windowing']['window_stride'] = window_stride
-    
+
     # Preprocessing hyperparameters
     if trial.suggest_categorical('apply_filter', [True, False]):
         trial_config['preprocessing']['filter']['apply'] = True
@@ -175,15 +166,11 @@ def create_trial_config(config, trial):
         trial_config['preprocessing']['filter']['highcut'] = trial.suggest_float('highcut', 30.0, 50.0)
     else:
         trial_config['preprocessing']['filter']['apply'] = False
-    
-    # Channel selection
+
     trial_config['preprocessing']['channels']['select'] = True
     trial_config['preprocessing']['channels']['set'] = 'epoc_x'
 
-    
-    # Validate dimensions to avoid shape mismatch errors
     validate_dimensions(trial_config)
-    
     return trial_config
 
 
@@ -719,6 +706,7 @@ def objective(trial, study_dir, logger):
     
     # Create trial configuration
     trial_config = create_trial_config(base_config, trial)
+    # logger.info(f"Trial {trial.number} configuration: {trial_config}")
     
     # Create trial directory within study directory
     trial_dir = study_dir / f"trial_{trial.number}"
@@ -771,7 +759,7 @@ def main():
     config = load_config('configs/config.yaml')
     model_mode = config['dataloader']['mode']
     
-    if model_mode == 'siamese':
+    if (model_mode == 'siamese'):
         if config['dataloader']['siamese'].get('use_contrastive', False):
             model_name = "contrastive_siamese"
         else:

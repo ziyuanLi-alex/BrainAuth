@@ -414,44 +414,35 @@ def train(config_path='configs/config.yaml'):
         sample, _ = train_dataset[0]
     else:
         sample, _, _ = train_dataset[0]
-    
     num_channels, num_samples = sample.shape
-    
-    # Create model
+
+    # Create model using factory (supports improved model)
     logger.info("=== Creating Model ===")
     if mode == 'identity':
-        model = ICAConvNet(
-            num_channels=num_channels, 
-            num_samples=num_samples, 
-            num_classes=train_dataset.num_classes, 
-            config_path=config_path
+        model = create_model(
+            config_path=config_path,
+            num_channels=num_channels,
+            num_samples=num_samples,
+            num_classes=train_dataset.num_classes
         ).to(device)
-        logger.info(f"Created ICAConvNet with {train_dataset.num_classes} output classes")
-        
-        # Loss function
+        logger.info(f"Created {type(model).__name__} with {train_dataset.num_classes} output classes")
         criterion = nn.NLLLoss()
-        
     elif use_contrastive:
-        model = ContrastiveSiameseNet(
-            num_channels=num_channels, 
-            num_samples=num_samples, 
-            config_path=config_path
+        model = create_model(
+            config_path=config_path,
+            num_channels=num_channels,
+            num_samples=num_samples
         ).to(device)
-        logger.info(f"Created ContrastiveSiameseNet")
-        
-        # Contrastive loss with configurable margin
+        logger.info(f"Created {type(model).__name__}")
         margin = config['model']['siamese'].get('margin', 1.0)
         criterion = lambda distance, label: contrastive_loss(distance, label, margin=margin)
-        
-    else:  # standard siamese
-        model = SiameseICAConvNet(
-            num_channels=num_channels, 
-            num_samples=num_samples, 
-            config_path=config_path
+    else:
+        model = create_model(
+            config_path=config_path,
+            num_channels=num_channels,
+            num_samples=num_samples
         ).to(device)
-        logger.info(f"Created SiameseICAConvNet")
-        
-        # Loss function
+        logger.info(f"Created {type(model).__name__}")
         criterion = nn.BCELoss()
     
     # Create optimizer
