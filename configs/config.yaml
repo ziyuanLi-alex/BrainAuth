@@ -1,71 +1,66 @@
-# BrainAuth配置文件
-
-# 随机种子设置
-seed: 42
-
-# 数据配置
 data:
-  data_dir: './data'
-  condition: 'eyes_open'
+  output_filename: eeg_data.h5
+  processed_dir: data/processed
+  raw_dir: data/organized
+dataloader:
   batch_size: 64
-  num_workers: 1  # 增加数据加载线程数
-  cache_data: true
-  use_hdf5_cache: true
-  hdf5_cache_dir: './data/hdf_cache'
-  reset_cache: false
-  pos_ratio: 0.5  # 正负样本平衡
-  preprocess_params:
-    l_freq: 1.0
-    h_freq: 40.0  # 限制高频范围
-    segment_duration: 0.5
-    overlap: 0.5
-    normalize: true
-    channels: null  # 使用所有通道
-    resample: 160.0
-    preprocess_cache: true
-    mapping_method: 'cubic'
-    use_log: true
-    freq_bands: none
-
-# 模型配置
-model:
-  name: "LightSiameseBrainAuth"  # "LightSiameseBrainAuth"
-  input_shape: [110, 100, 10]  # 与代码中默认值一致
-  num_classes: 2
-  pretrained: null
-
-# 训练配置
-train:
-  epochs: 30  # 3D CNN需要更多epochs收敛
-  learning_rate: 0.0001  # 比常规CNN更小的学习率
-  weight_decay: 0.001  # 适度的权重衰减
-  lr_scheduler: "plateau"  
-  lr_scheduler_params:
-    step_size: 5
-    gamma: 0.1
-    patience: 15
-  early_stopping: true
-  early_stopping_patience: 5  # 更长的耐心
-  loss_function: "bce"  # 孪生网络适合二元交叉熵
-
-# 验证配置
+  mode: siamese # Options: 'siamese', 'identity'
+  num_workers: 4
+  pin_memory: true
+  seed: 42
+  siamese:
+    pos_ratio: 0.5  # Ratio of positive pairs (same subject) to all pairs
+    same_session: true  # Whether to only compare within the same session
+    use_contrastive: false  # Whether to use contrastive loss instead of BCE
+    cache_pairs: true  # Cache generated pairs to HDF5 file
+    pairs_cache_dir: 'data/cache'  # Directory to store pairs cache
+  test_size: 0.2
 evaluation:
-  metrics: ["accuracy", "precision", "recall", "f1", "auc", "eer"]
-  best_metric: "accuracy"  
-  subject_split: 
-    train: 0.7
-    val: 0.15
-    test: 0.15
-  monitor_subject_performance: true
-
-# 日志配置
-logging:
-  log_tensor_shapes: false  # 训练时关闭以减少日志量
-
-# 结果保存
-output:
-  checkpoint_dir: "./outputs/checkpoints"
-  log_dir: "./outputs/logs"
-  results_dir: "./outputs/results"
-  save_best_only: true
-  save_frequency: 3
+  model_path: models/best_model.pt
+  output_dir: results
+  plot_results: true
+experiment:
+  include_eyes_closed: true
+  include_eyes_open: true
+model:
+  conv_filters:
+  - 32
+  - 32
+  - 32
+  dropout_rate: 0.5
+  fc_dim: 512
+  ica_components: 64
+  kernel_sizes:
+  - - 5
+    - 3
+  - - 3
+    - 3
+  - - 3
+    - 3
+  siamese:
+    embedding_dim: 512
+    hidden_dim: 256
+    margin: 1.0
+preprocessing:
+  channels:
+    select: true
+    set: epoc_x
+  filter:
+    apply: true
+    highcut: 50.0
+    lowcut: 1.0
+  normalize: true
+  resample:
+    apply: false
+    freq: 128
+training:
+  early_stopping: true
+  epochs: 50
+  learning_rate: 0.003
+  optimizer: adam
+  patience: 5
+  use_gpu: true
+  weight_decay: 0.0001
+windowing:
+  window_length: 0.5
+  window_stride: 0.25
