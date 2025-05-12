@@ -1,12 +1,12 @@
 # Optuna超参数优化配置文件 - 专注于LightSiameseBrainAuth模型
 
 # 试验设置
-n_trials: 20               # 试验次数
+n_trials: 30               # 试验次数
 timeout: null              # 超时时间（秒），null表示不限制
-epochs: 20                 # 每个试验的训练轮数
-early_stopping_patience: 9 # 早停耐心值
+epochs: 30                 # 每个试验的训练轮数
+early_stopping_patience: 10 # 早停耐心值
 direction: "maximize"      # 优化方向: "maximize" 或 "minimize"
-metric: "f1"               # 优化目标指标: "accuracy", "f1", "auc", "eer" 等
+metric: "accuracy"               # 优化目标指标: "accuracy", "f1", "auc", "eer" 等
 
 # 并行设置
 n_jobs: 1                  # 并行运行的作业数，1表示顺序执行
@@ -65,7 +65,7 @@ params:
   
   # 损失函数选择
   loss_function:       # 损失函数类型
-    choices: ["contrastive"]
+    choices: ["bce"]
   
   # Focal Loss参数 (仅当loss_function为'focal'时使用)
   focal_gamma:         # Focal Loss的gamma参数

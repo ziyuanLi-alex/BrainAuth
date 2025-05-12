@@ -378,7 +378,7 @@ class LightSiameseBrainAuth(nn.Module):
     def __init__(self, input_shape: Tuple[int, int, int] = (110, 100, 10), 
                 conv_channels: Optional[List[int]] = None,
                 hidden_size: int = 128,
-                dropout_rate: float = 0.28,
+                dropout_rate: float = 0.55,
                 use_batch_norm: bool = True):
         """初始化模型
         

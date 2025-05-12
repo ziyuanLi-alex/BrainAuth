@@ -7,7 +7,7 @@ seed: 42
 data:
   data_dir: './data'
   condition: 'eyes_open'
-  batch_size: 128  # 减小batch_size以适应3D CNN的内存需求
+  batch_size: 64
   num_workers: 1  # 增加数据加载线程数
   cache_data: true
   use_hdf5_cache: true
@@ -17,7 +17,7 @@ data:
   preprocess_params:
     l_freq: 1.0
     h_freq: 40.0  # 限制高频范围
-    segment_duration: 2.0
+    segment_duration: 0.5
     overlap: 0.5
     normalize: true
     channels: null  # 使用所有通道
@@ -25,7 +25,7 @@ data:
     preprocess_cache: true
     mapping_method: 'cubic'
     use_log: true
-    freq_bands: [[8.0, 10.2], [10.2, 12.4], [12.4, 14.6], [14.6, 16.8], [16.8, 19.0], [19.0, 21.2], [21.2, 23.4], [23.4, 25.6], [25.6, 27.8], [27.8, 30.0]]  # 8-30Hz划分为10个频段
+    freq_bands: none
 
 # 模型配置
 model:
@@ -36,22 +36,22 @@ model:
 
 # 训练配置
 train:
-  epochs: 10  # 3D CNN需要更多epochs收敛
-  learning_rate: 0.0009  # 比常规CNN更小的学习率
-  weight_decay: 0.0001  # 适度的权重衰减
-  lr_scheduler: "one_cycle"  
+  epochs: 30  # 3D CNN需要更多epochs收敛
+  learning_rate: 0.0001  # 比常规CNN更小的学习率
+  weight_decay: 0.001  # 适度的权重衰减
+  lr_scheduler: "plateau"  
   lr_scheduler_params:
-    step_size: 10
+    step_size: 5
     gamma: 0.1
-    patience: 5
+    patience: 15
   early_stopping: true
-  early_stopping_patience: 15  # 更长的耐心
-  loss_function: "contrastive"  # 孪生网络适合二元交叉熵
+  early_stopping_patience: 5  # 更长的耐心
+  loss_function: "bce"  # 孪生网络适合二元交叉熵
 
 # 验证配置
 evaluation:
   metrics: ["accuracy", "precision", "recall", "f1", "auc", "eer"]
-  best_metric: "accuracy"  # F1分数对不平衡数据更鲁棒
+  best_metric: "accuracy"  
   subject_split: 
     train: 0.7
     val: 0.15
