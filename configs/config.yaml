@@ -11,7 +11,7 @@ dataloader:
   siamese:
     pos_ratio: 0.5  # Ratio of positive pairs (same subject) to all pairs
     same_session: true  # Whether to only compare within the same session
-    use_contrastive: false  # Whether to use contrastive loss instead of BCE
+    use_contrastive: true  # Whether to use contrastive loss instead of BCE
     cache_pairs: true  # Cache generated pairs to HDF5 file
     pairs_cache_dir: 'data/cache'  # Directory to store pairs cache
   test_size: 0.2
@@ -43,7 +43,7 @@ model:
     margin: 1.0
 preprocessing:
   channels:
-    select: true
+    select: false
     set: epoc_x
   filter:
     apply: true
@@ -56,9 +56,9 @@ preprocessing:
 training:
   early_stopping: true
   epochs: 50
-  learning_rate: 0.003
+  learning_rate: 0.0003
   optimizer: adam
-  patience: 5
+  patience: 10
   use_gpu: true
   weight_decay: 0.0001
 windowing:
