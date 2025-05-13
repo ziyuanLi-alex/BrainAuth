@@ -480,6 +480,22 @@ def train_trial_model(trial_config, trial_dir, logger):
     temp_config_path = trial_dir / 'config.yaml'
     save_trial_config(trial_config, temp_config_path)
     
+    # ====== 强制重新预处理数据，避免复用旧的预处理结果 ======
+    # 假设 get_dataloaders 使用 config['preprocessing']['cache_dir'] 或类似字段作为缓存目录
+    # 你需要根据你的实际数据缓存实现调整下面的路径
+    preprocessing_cache_dir = None
+    if 'preprocessing' in trial_config and 'cache_dir' in trial_config['preprocessing']:
+        preprocessing_cache_dir = trial_config['preprocessing']['cache_dir']
+    else:
+        # 假设默认缓存目录为 data/preprocessed
+        preprocessing_cache_dir = 'data/preprocessed'
+    # 为每个 trial 使用独立的缓存目录（推荐），或者直接删除缓存目录
+    import shutil
+    if os.path.exists(preprocessing_cache_dir):
+        logger.info(f"Removing preprocessing cache directory: {preprocessing_cache_dir}")
+        shutil.rmtree(preprocessing_cache_dir)
+    # ====== 结束强制重新预处理 ======
+
     # Create data loaders using the trial configuration
     logger.info("Creating DataLoaders...")
     train_loader, val_loader = get_dataloaders(config_path=str(temp_config_path))
