@@ -62,6 +62,7 @@ def setup_logging(output_dir):
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     
+    logger.propagate = False  # 防止日志重复输出到父 logger
     return logger
 
 
@@ -153,7 +154,7 @@ def create_trial_config(config, trial):
     trial_config['training']['weight_decay'] = trial.suggest_float('weight_decay', 1e-5, 1e-3, log=True)
     trial_config['training']['optimizer'] = trial.suggest_categorical('optimizer', ['adam', 'sgd'])
     trial_config['training']['epochs'] = min(trial_config['training']['epochs'], 30)
-    window_length = trial.suggest_categorical('window_length', [0.25, 0.5, 1.0])
+    window_length = trial.suggest_categorical('window_length', [0.5, 1.0])
     trial_config['windowing']['window_length'] = window_length
     window_stride = trial.suggest_categorical('window_stride', [0.125, 0.25, 0.5])
     if window_stride > window_length:
@@ -782,7 +783,7 @@ def train_trial_model(trial_config, trial_dir, logger):
         logger.info(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
         
         if mode == 'siamese' and 'eer' in val_metrics:
-            logger.info(f"Val ROC AUC: {val_metrics['roc_auc']:.4f}, Val EER: {val_metrics['eer']:.4f}")
+            logger.info(f"Val ROC AUC: {val_metrics['roc_auc']:.4f}, Val EER: {(val_metrics['eer'] * 100):.4f}%")
         
         # Store metrics
         train_losses.append(train_metrics['loss'])

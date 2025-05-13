@@ -508,7 +508,7 @@ def train(config_path='configs/config.yaml'):
         logger.info(f"Val Loss: {val_metrics['loss']:.4f}, Val Acc: {val_metrics['accuracy']:.2f}%")
         
         if mode == 'siamese':
-            logger.info(f"Val ROC AUC: {val_metrics['roc_auc']:.4f}, Val EER: {val_metrics['eer']:.4f}")
+            logger.info(f"Val ROC AUC: {val_metrics['roc_auc']:.4f}, Val EER: {(val_metrics['eer'] * 100):.4f}")
         
         # Store metrics
         train_losses.append(train_metrics['loss'])
