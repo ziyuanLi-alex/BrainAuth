@@ -55,7 +55,7 @@ preprocessing:
     freq: 128
 training:
   early_stopping: true
-  epochs: 80
+  epochs: 20
   learning_rate: 0.009795624180611199
   optimizer: sgd
   patience: 15
@@ -63,4 +63,4 @@ training:
   weight_decay: 0.0002338650916737274
 windowing:
   window_length: 0.5
-  window_stride: 0.5
+  window_stride: 0.25

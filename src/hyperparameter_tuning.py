@@ -189,6 +189,160 @@ def save_trial_config(config, config_path):
     with open(config_path, 'w') as f:
         yaml.dump(config, f)
 
+def clear_cache_for_trial(trial_config, logger):
+    """
+    Clear cache directories for a specific trial to force reprocessing.
+    
+    Args:
+        trial_config: Configuration dictionary for the trial
+        logger: Logger object
+    """
+    # Clear dataset pair cache if in siamese mode
+    if trial_config['dataloader']['mode'] == 'siamese' and trial_config['dataloader']['siamese'].get('cache_pairs', False):
+        cache_dir = Path(trial_config['dataloader']['siamese'].get('pairs_cache_dir', 'data/cache'))
+        if cache_dir.exists():
+            logger.info(f"Clearing siamese pair cache: {cache_dir}")
+            for cache_file in cache_dir.glob('pairs_cache_*.h5'):
+                try:
+                    cache_file.unlink()
+                    logger.info(f"Removed cache file: {cache_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove cache file {cache_file}: {e}")
+    
+    # Create a unique preprocessed data file for this trial
+    trial_data_filename = f"eeg_data_trial_{hash(str(trial_config['windowing']))}.h5"
+    trial_config['data']['output_filename'] = trial_data_filename
+    
+    return trial_config
+
+def preprocess_data_for_trial(trial_config, logger):
+    """
+    Preprocess data specifically for a trial with given hyperparameters.
+    
+    Args:
+        trial_config: Configuration dictionary for the trial
+        logger: Logger object
+        
+    Returns:
+        Path to the preprocessed data file
+    """
+    from preprocess import process_edf_file, segment_data
+    import h5py
+    from pathlib import Path
+    
+    # Update output filename to be unique for this trial
+    window_config_str = f"{trial_config['windowing']['window_length']}_{trial_config['windowing']['window_stride']}"
+    filter_config_str = ""
+    if trial_config['preprocessing']['filter']['apply']:
+        filter_config_str = f"_filt_{trial_config['preprocessing']['filter']['lowcut']}_{trial_config['preprocessing']['filter']['highcut']}"
+    
+    trial_data_filename = f"eeg_data_trial_{window_config_str}{filter_config_str}.h5"
+    trial_config['data']['output_filename'] = trial_data_filename
+    
+    output_dir = Path(trial_config['data']['processed_dir'])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / trial_data_filename
+    
+    # Skip preprocessing if file already exists
+    if output_path.exists():
+        logger.info(f"Using existing preprocessed data file: {output_path}")
+        return str(output_path)
+    
+    # Determine conditions to process
+    conditions = []
+    if trial_config['experiment']['include_eyes_open']:
+        conditions.append('eyes_open')
+    if trial_config['experiment']['include_eyes_closed']:
+        conditions.append('eyes_closed')
+    
+    # Original sampling frequency for PhysioNet dataset
+    orig_sfreq = 160
+    
+    # Get effective sampling frequency after potential resampling
+    effective_sfreq = orig_sfreq
+    if trial_config['preprocessing']['resample']['apply']:
+        effective_sfreq = trial_config['preprocessing']['resample']['freq']
+    
+    logger.info(f"Preprocessing data with window length: {trial_config['windowing']['window_length']}, "
+                f"stride: {trial_config['windowing']['window_stride']}")
+    
+    # Create HDF5 file
+    with h5py.File(output_path, 'w') as hf:
+        # Store metadata
+        metadata = hf.create_group('metadata')
+        metadata.attrs['window_length'] = trial_config['windowing']['window_length']
+        metadata.attrs['window_stride'] = trial_config['windowing']['window_stride']
+        metadata.attrs['original_sampling_frequency'] = orig_sfreq
+        metadata.attrs['effective_sampling_frequency'] = effective_sfreq
+        
+        # Store filtering info
+        metadata.attrs['filter_applied'] = trial_config['preprocessing']['filter']['apply']
+        if trial_config['preprocessing']['filter']['apply']:
+            metadata.attrs['lowcut'] = trial_config['preprocessing']['filter']['lowcut']
+            metadata.attrs['highcut'] = trial_config['preprocessing']['filter']['highcut']
+        
+        # Store resampling info
+        metadata.attrs['resampling_applied'] = trial_config['preprocessing']['resample']['apply']
+        if trial_config['preprocessing']['resample']['apply']:
+            metadata.attrs['target_frequency'] = trial_config['preprocessing']['resample']['freq']
+        
+        # Store normalization info
+        metadata.attrs['normalization_applied'] = trial_config['preprocessing']['normalize']
+        
+        # Store channel selection info
+        metadata.attrs['channel_selection'] = trial_config['preprocessing']['channels']['select']
+        if trial_config['preprocessing']['channels']['select']:
+            metadata.attrs['channel_set'] = trial_config['preprocessing']['channels']['set']
+            if trial_config['preprocessing']['channels']['set'] == 'epoc_x':
+                metadata.attrs['num_channels'] = 14
+            else:
+                metadata.attrs['num_channels'] = 64
+        
+        # Store full config as string
+        metadata.attrs['config_yaml'] = yaml.dump(trial_config)
+        
+        # Process each condition and subject
+        data_group = hf.create_group('data')
+        
+        for condition in conditions:
+            condition_path = Path(trial_config['data']['raw_dir']) / condition
+            if not condition_path.exists():
+                logger.warning(f"Condition directory {condition_path} does not exist")
+                continue
+            
+            # Create group for this condition
+            condition_group = data_group.create_group(condition)
+            
+            # Get subject directories
+            subject_dirs = [d for d in condition_path.iterdir() if d.is_dir()]
+            
+            # Process each subject
+            from tqdm import tqdm
+            for subject_dir in tqdm(subject_dirs, desc=f"Processing {condition}"):
+                subject_id = subject_dir.name
+                edf_file = subject_dir / f"{subject_id}_eeg.edf"
+                
+                if not edf_file.exists():
+                    logger.warning(f"EDF file {edf_file} does not exist")
+                    continue
+                
+                # Process EDF file
+                windows, sfreq = process_edf_file(str(edf_file), trial_config, orig_sfreq)
+                
+                if not windows:
+                    logger.warning(f"No data windows extracted from {edf_file}")
+                    continue
+                
+                # Create dataset for this subject
+                # Convert windows list to a single numpy array (windows x channels x samples)
+                windows_array = np.array(windows)
+                subject_group = condition_group.create_group(subject_id)
+                subject_group.create_dataset('windows', data=windows_array)
+                subject_group.attrs['num_windows'] = len(windows)
+                subject_group.attrs['sampling_frequency'] = sfreq
+    
+    logger.info(f"Preprocessing complete. Output saved to {output_path}")
+    return str(output_path)
 
 def train_one_epoch(model, train_loader, criterion, optimizer, device, mode='identity', use_contrastive=False, show_progress=False):
     """
@@ -465,6 +619,19 @@ def train_trial_model(trial_config, trial_dir, logger):
     Returns:
         Dictionary of results including best metrics and model path
     """
+    
+        # 清除缓存并创建特定于该试验的配置
+    trial_config = clear_cache_for_trial(trial_config, logger)
+    
+    # 预处理数据
+    try:
+        data_file = preprocess_data_for_trial(trial_config, logger)
+        logger.info(f"Using preprocessed data file: {data_file}")
+    except Exception as e:
+        logger.error(f"Error preprocessing data: {e}")
+        raise
+    
+
     # Set random seed for reproducibility
     seed = trial_config['dataloader']['seed']
     torch.manual_seed(seed)
@@ -481,21 +648,21 @@ def train_trial_model(trial_config, trial_dir, logger):
     temp_config_path = trial_dir / 'config.yaml'
     save_trial_config(trial_config, temp_config_path)
     
-    # ====== 强制重新预处理数据，避免复用旧的预处理结果 ======
-    # 假设 get_dataloaders 使用 config['preprocessing']['cache_dir'] 或类似字段作为缓存目录
-    # 你需要根据你的实际数据缓存实现调整下面的路径
-    preprocessing_cache_dir = None
-    if 'preprocessing' in trial_config and 'cache_dir' in trial_config['preprocessing']:
-        preprocessing_cache_dir = trial_config['preprocessing']['cache_dir']
-    else:
-        # 假设默认缓存目录为 data/preprocessed
-        preprocessing_cache_dir = 'data/preprocessed'
-    # 为每个 trial 使用独立的缓存目录（推荐），或者直接删除缓存目录
-    import shutil
-    if os.path.exists(preprocessing_cache_dir):
-        logger.info(f"Removing preprocessing cache directory: {preprocessing_cache_dir}")
-        shutil.rmtree(preprocessing_cache_dir)
-    # ====== 结束强制重新预处理 ======
+    # # ====== 强制重新预处理数据，避免复用旧的预处理结果 ======
+    # # 假设 get_dataloaders 使用 config['preprocessing']['cache_dir'] 或类似字段作为缓存目录
+    # # 你需要根据你的实际数据缓存实现调整下面的路径
+    # preprocessing_cache_dir = None
+    # if 'preprocessing' in trial_config and 'cache_dir' in trial_config['preprocessing']:
+    #     preprocessing_cache_dir = trial_config['preprocessing']['cache_dir']
+    # else:
+    #     # 假设默认缓存目录为 data/preprocessed
+    #     preprocessing_cache_dir = 'data/preprocessed'
+    # # 为每个 trial 使用独立的缓存目录（推荐），或者直接删除缓存目录
+    # import shutil
+    # if os.path.exists(preprocessing_cache_dir):
+    #     logger.info(f"Removing preprocessing cache directory: {preprocessing_cache_dir}")
+    #     shutil.rmtree(preprocessing_cache_dir)
+    # # ====== 结束强制重新预处理 ======
 
     # Create data loaders using the trial configuration
     logger.info("Creating DataLoaders...")

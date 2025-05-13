@@ -326,7 +326,8 @@ class EEGDataset(Dataset):
                 metadata.attrs['pos_ratio'] = self.pos_ratio
                 metadata.attrs['same_session'] = self.same_session
                 metadata.attrs['num_pairs'] = len(self.pairs)
-            
+                metadata.attrs['dataset_size'] = len(self.all_windows)  # Store current dataset size
+                
             print(f"Saved {len(self.pairs)} pairs to cache: {cache_path}")
             return True
         except Exception as e:
@@ -362,11 +363,24 @@ class EEGDataset(Dataset):
                 pairs = f['pairs'][:]
                 labels = f['labels'][:]
                 
+                # Check if indices are within bounds
+                if np.max(pairs) >= len(self.all_windows):
+                    print(f"Cache indices out of bounds (max index: {np.max(pairs)}, dataset size: {len(self.all_windows)}), regenerating pairs")
+                    return None, None
+                
+                # Extra validation: store dataset size in metadata
+                if 'dataset_size' in metadata.attrs:
+                    cached_size = metadata.attrs['dataset_size']
+                    current_size = len(self.all_windows)
+                    if cached_size != current_size:
+                        print(f"Dataset size changed (cached: {cached_size}, current: {current_size}), regenerating pairs")
+                        return None, None
+                
                 return pairs, labels
+                
         except Exception as e:
             print(f"Error loading pairs from cache: {e}")
-            return None, None
-        
+            return None, None        
     def __len__(self):
         """Return the number of samples in the dataset."""
         if self.mode == 'identity':
