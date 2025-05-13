@@ -69,10 +69,10 @@ preprocessing:
     freq: 128
 training:
   early_stopping: true
-  epochs: 150
+  epochs: 30
   learning_rate: 0.0006055541687057108
   optimizer: adam
-  patience: 150
+  patience: 15
   use_gpu: true
   weight_decay: 7.362611171544752e-05
 windowing:
