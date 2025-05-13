@@ -61,7 +61,7 @@ def setup_logging(output_dir=None, level=logging.INFO):
     return logger
 
 
-def train_one_epoch(model, train_loader, criterion, optimizer, device, mode='identity', use_contrastive=False):
+def train_one_epoch(model, train_loader, criterion, optimizer, device, mode='identity', use_contrastive=False, show_progress=False):
     """
     Train model for one epoch.
     
@@ -84,7 +84,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, device, mode='ide
     total = 0
     
     # Progress bar
-    progress_bar = tqdm(train_loader, desc="Training")
+    progress_bar = tqdm(train_loader, desc="Training", disable=not show_progress)
     
     for batch in progress_bar:
         if mode == 'identity':
@@ -162,7 +162,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, device, mode='ide
     }
 
 
-def evaluate(model, val_loader, criterion, device, mode='identity', use_contrastive=False):
+def evaluate(model, val_loader, criterion, device, mode='identity', use_contrastive=False, show_progress=False):
     """
     Evaluate model on validation set.
     
@@ -188,7 +188,7 @@ def evaluate(model, val_loader, criterion, device, mode='identity', use_contrast
     all_scores = []
     
     with torch.no_grad():
-        for batch in tqdm(val_loader, desc="Validating"):
+        for batch in tqdm(val_loader, desc="Validating", disable=not show_progress):
             if mode == 'identity':
                 # Unpack batch
                 inputs, labels = batch

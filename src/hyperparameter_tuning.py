@@ -139,13 +139,14 @@ def create_trial_config(config, trial):
         trial_config['model']['siamese']['hidden_dim'] = trial.suggest_categorical('hidden_dim', [64, 128, 256])
         if trial_config['dataloader']['siamese']['use_contrastive']:
             trial_config['model']['siamese']['margin'] = trial.suggest_float('margin', 0.5, 2.0)
-        # 支持改进版相似度网络
-        trial_config['model']['siamese']['similarity_network']['use_batch_norm'] = trial.suggest_categorical('simnet_batch_norm', [True, False])
-        trial_config['model']['siamese']['similarity_network']['additional_layer'] = trial.suggest_categorical('simnet_additional_layer', [True, False])
-        trial_config['model']['siamese']['similarity_network']['dropout_reduction'] = trial.suggest_float('simnet_dropout_reduction', 0.2, 0.8)
-        # 支持注意力机制
-        trial_config['model']['siamese']['attention']['enabled'] = trial.suggest_categorical('attention_enabled', [True, False])
-        trial_config['model']['siamese']['attention']['reduction_ratio'] = trial.suggest_categorical('attention_reduction_ratio', [2, 4, 8])
+        if improved_enabled:
+            # 支持改进版相似度网络
+            trial_config['model']['siamese']['similarity_network']['use_batch_norm'] = trial.suggest_categorical('simnet_batch_norm', [True, False])
+            trial_config['model']['siamese']['similarity_network']['additional_layer'] = trial.suggest_categorical('simnet_additional_layer', [True, False])
+            trial_config['model']['siamese']['similarity_network']['dropout_reduction'] = trial.suggest_float('simnet_dropout_reduction', 0.2, 0.8)
+            # 支持注意力机制
+            trial_config['model']['siamese']['attention']['enabled'] = trial.suggest_categorical('attention_enabled', [True, False])
+            trial_config['model']['siamese']['attention']['reduction_ratio'] = trial.suggest_categorical('attention_reduction_ratio', [2, 4, 8])
 
     # Training hyperparameters
     trial_config['training']['learning_rate'] = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
@@ -490,7 +491,9 @@ def train_trial_model(trial_config, trial_dir, logger):
     use_contrastive = trial_config['dataloader']['siamese'].get('use_contrastive', False) if mode == 'siamese' else False
     
     logger.info(f"Mode: {mode}")
-    logger.info(f"Number of classes: {train_dataset.num_classes}")
+    # logger.info(f"Original Number of classes: {train_dataset.num_classes}")
+    if mode == 'identity':
+        logger.info(f"Number of classes: {train_dataset.num_classes}")
     logger.info(f"Number of training samples: {len(train_dataset)}")
     logger.info(f"Number of validation samples: {len(val_loader.dataset)}")
     
